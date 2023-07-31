@@ -8,4 +8,8 @@ BatteyPy is a lightweight and pure-python library for Windows that allow you to 
 
 <h2>Features</h2>
 
-<h1>How It's Work ?</h1>
+<h2>How It's Work ?</h2>
+
+<h2>Usage</h2>
+
+<h2>License</h2>
