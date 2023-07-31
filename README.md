@@ -7,6 +7,5 @@ BatteyPy is a lightweight and pure-python library for Windows that allow you to 
 </p>
 
 <h2>Features</h2>
-<input type="checkbox">Cross platform</input>
 
 <h1>How It's Work ?</h1>
