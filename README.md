@@ -13,6 +13,7 @@ BatteyPy is a lightweight and pure-python library for Windows that allow you to 
 </p1>
 
 <h2>Usage</h2>
+
 Example
 -----
 ~~~python
