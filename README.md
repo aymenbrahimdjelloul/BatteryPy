@@ -19,10 +19,8 @@ Example
 # First import the Batter class object from the BatteryPy module
 from BatteryPy.BatteryPy import Battery
 
-# Create Battery Object
 battery = Battery()
 
-# Print out the battery level
 print(battery.battery_percentage)
 
 ~~~
