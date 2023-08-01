@@ -9,7 +9,7 @@ BatteyPy is a lightweight and pure-python library for Windows that allow you to 
 <h2>Features</h2>
 
 -[ ] Cross platform
-<br>
+
 -[x] Easy to use !
 
 <h2>How It's Work ?</h2>
@@ -34,6 +34,4 @@ print(battery.battery_percentage)
 <h2>License</h2>
 <h4>This project is published under MIT License </h4>
 
-~~~
 ![(https://github.com/aymenbrahimdjelloul/BatteryPy/blob/main/LICENSE)]
-~~~
