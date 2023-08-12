@@ -24,7 +24,7 @@ BatteyPy is a lightweight and pure-python library for Windows that allow you to 
 Usage
 -----
 ~~~python
-# First import the Batter class object from the BatteryPy module
+# First import the Battery class object from the BatteryPy module
 from BatteryPy.BatteryPy import Battery
 
 # Create battery class object
