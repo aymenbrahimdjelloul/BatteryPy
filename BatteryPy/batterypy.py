@@ -35,10 +35,10 @@ import sys
 _platform: str = platform.system()
 
 # DEFINE GLOBAL VARIABLES
-AUTHOR = "Aymen Brahim Djelloul"
-VERSION = "1.0.1"
+AUTHOR: str = "Aymen Brahim Djelloul"
+VERSION: str = "1.0.1"
 
-supported_platforms = ("Windows", "Linux")
+supported_platforms: tuple = ("Windows", "Linux")
 
 
 if _platform == "Windows":
