@@ -32,19 +32,19 @@ import platform
 import sys
 
 # DEFINE THE PLATFORM
-_platform: str = platform.system()
+PLATFORM: str = platform.system()
 
 # DEFINE GLOBAL VARIABLES
 AUTHOR: str = "Aymen Brahim Djelloul"
 VERSION: str = "1.0.1"
 
-supported_platforms: tuple = ("Windows", "Linux")
+supported_platforms = ("Windows", "Linux")
 
 
 if _platform == "Windows":
-    from __windows_batterypy import *
+    from windows_batterypy import *
 elif _platform == "linux":
-    from __linux_batterypy import *
+    from linux_batterypy import *
 else:
     raise NotSupportedPlatform("Battery Py support only Windows and Linux-debian systems")
 
