@@ -45,8 +45,7 @@ import os
 import platform
 import subprocess
 import datetime
-from exceptions import (NotSupportedPlatform, NotSupportedDriver, NotSupportedDeviceType
-                        )
+from .exceptions import NotSupportedPlatform, NotSupportedDriver, NotSupportedDeviceType
 
 # DEFINE GLOBAL VARIABLES
 AUTHOR = "Aymen Brahim Djelloul"
