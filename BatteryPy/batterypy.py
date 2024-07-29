@@ -20,8 +20,8 @@ License : MIT
     - tells is fast charged
 
     How Its Work ?
-        BatteryPy uses integrated tools on the operating system it self to gather
-        battery and power management information and parse it
+        BatteryPy use built-in tools with drivers in the operating system and parse it
+        to gather battery information including all specs and capacity and charge percent etc .
 
 
 """
