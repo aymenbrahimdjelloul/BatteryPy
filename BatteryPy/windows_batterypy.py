@@ -26,7 +26,7 @@ import os
 import platform
 import subprocess
 import datetime
-from exceptions import NotSupportedPlatform, NotSupportedDriver, NotSupportedDeviceType
+from exceptions import NotSupportedDriver, NotSupportedDeviceType
 
 
 class Battery:
@@ -35,9 +35,6 @@ class Battery:
 
         # CHECK PLATFORM COMPATIBILITY
         _platform = platform.system()
-
-        if _platform not in supported_platforms:
-            raise NotSupportedPlatform(_platform)
 
         # CHECK IF THE 'powercfg' is enabled
         _powercfg_output = subprocess.check_output(["powercfg", "/L"], text=True)
@@ -268,7 +265,7 @@ class Battery:
         """ This method will return all information that BatteryPy can retrieve"""
 
         # DEFINE THE INFORMATION DICT
-        return {'python_version': platform.python_version(), 'BatteryPy_version': VERSION,
+        return {'python_version': platform.python_version(), 'BatteryPy_version': '1.0.1',
                 'battery_manufacturer': self.manufacturer, 'battery_chemistry': self.chemistry,
                 'battery_voltage': self.get_current_voltage(False),
                 'friendly_battery_voltage': self.get_current_voltage(True),
