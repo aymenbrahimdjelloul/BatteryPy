@@ -7,12 +7,18 @@ This file is for testing BatteryPy which we will get the battery information
 
 # Import the Battery Object class from BatteryPy module
 from exceptions import *
-from batterypy import Battery, AUTHOR, VERSION
+from batterypy import Battery, AUTHOR, VERSION, PLATFORM
 from time import perf_counter
 import os
 
-# Set terminal window title
-os.system(f"title BatteryPy - {VERSION}")
+# Check if the OS to apply color and title changes
+if PLATFORM == "Windows":
+    # Set terminal window title
+    os.system(f"title BatteryPy - {VERSION}")
+
+    # Change colors
+    os.system("color F0")
+
 # Print the software header
 print(f"\n{' ' * 5}[ BatteryPy - v{VERSION}{' ' * 5}|{' '*5} Developed by {AUTHOR} ]\n\n")
 
