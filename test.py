@@ -5,9 +5,9 @@ date : 29.07.2024
 This file is for testing BatteryPy which we will get the battery information
 """
 
-# Import the Battery Object class from BatteryPy module
-from exceptions import *
-from batterypy import Battery, AUTHOR, VERSION, PLATFORM
+# IMPORTS
+from batterypy.exceptions import *
+from batterypy.batterypy import Battery, AUTHOR, VERSION, PLATFORM
 from time import perf_counter
 import os
 
