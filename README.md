@@ -8,7 +8,7 @@ BatteyPy is a lightweight and pure-python library for Windows that allow you to 
 
 <h2>Features</h2>
 
-- [ ] Cross platform
+- [X] Cross platform
 
 - [x] Easy & Fast !
 
