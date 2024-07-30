@@ -27,7 +27,7 @@ License : MIT
 """
 
 # IMPORTS
-from exceptions import NotSupportedPlatform
+from .exceptions import NotSupportedPlatform
 import platform
 import sys
 
@@ -40,11 +40,10 @@ VERSION: str = "1.0.1"
 
 supported_platforms = ("Windows", "Linux")
 
-
-if _platform == "Windows":
-    from windows_batterypy import *
-elif _platform == "linux":
-    from linux_batterypy import *
+if PLATFORM == "Windows":
+    from .windows_batterypy import *
+elif PLATFORM == "Linux":
+    from .linux_batterypy import *
 else:
     raise NotSupportedPlatform("Battery Py support only Windows and Linux-debian systems")
 
