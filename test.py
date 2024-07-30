@@ -7,7 +7,7 @@ This file is for testing BatteryPy which we will get the battery information
 
 # IMPORTS
 from batterypy.exceptions import *
-from batterypy.batterypy import Battery, AUTHOR, VERSION, PLATFORM
+from batterypy.battery_py import Battery, AUTHOR, VERSION, PLATFORM
 from time import perf_counter
 import os
 
