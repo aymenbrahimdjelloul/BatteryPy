@@ -27,8 +27,7 @@ BatteryPy is a lightweight, pure-Python library designed for Windows, allowing y
    ~~~bash
    cd BatteryPy
    ~~~
-Run it :
-
+3. Run it :
    ~~~bash
    python3 run.py
    ~~~
