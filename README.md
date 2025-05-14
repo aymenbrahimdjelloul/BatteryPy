@@ -21,7 +21,7 @@ BatteryPy is a lightweight, pure-Python library designed for Windows, allowing y
 
 1. Clone the repo :
    ~~~bash
-   git clone https://github.com/your-username/BatteryPy.git
+   git clone https://github.com/aymenbrahimdjelloul/BatteryPy.git
    ~~~
 2. Navigate to the project folder :
    ~~~bash
