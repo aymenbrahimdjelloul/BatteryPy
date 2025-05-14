@@ -31,6 +31,12 @@ BatteryPy is a lightweight, pure-Python library designed for Windows, allowing y
    ~~~bash
    python3 run.py
    ~~~
+#### **Or Install via pip :**
+
+~~~bash
+pip install batterypy
+~~~
+
    
 --- 
 
