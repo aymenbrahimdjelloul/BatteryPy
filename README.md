@@ -82,7 +82,7 @@ Your support and contributions help make open-source development a thriving and 
 ~~~
 MIT License
 
-Copyright (c) 2023 Aymen Brahim Djelloul
+Copyright (c) 2023-2025 Aymen Brahim Djelloul
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
