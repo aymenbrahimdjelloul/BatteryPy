@@ -12,15 +12,16 @@ License : MIT
 
 # IMPORTS
 import sys
-from platform import system as system_name
+from platform import system
 
-
-__CURRENT_PLATFORM: str = system_name()
+# CONSTANTS
+VERSION: str = "1.1"
+CURRENT_PLATFORM: str = system()
 
 # Initialize BatteryPy
-if __CURRENT_PLATFORM == "Windows":
+if CURRENT_PLATFORM == "Windows":
     from ._win_battery import *
-elif __CURRENT_PLATFORM == "Linux":
+elif CURRENT_PLATFORM == "Linux":
     from ._linux_battery import *
 else:
     sys.exit("Unsupported platform")

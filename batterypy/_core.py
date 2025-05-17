@@ -13,16 +13,18 @@ License: MIT
 # IMPORTS
 import os
 import sys
-import platform
+import ctypes
 import subprocess
+from batterypy import CURRENT_PLATFORM
 
 
 class _Const:
 
     # DECLARE GLOBAL VARIABLES
-    AUTHOR: str = "Aymen Brahim Djelloul"
-    VERSION: str = "1.1"
     SUPPORTED_PLATFORMS: tuple = ("Windows", "Linux")
+
+    # Set the fast charge rate at 30 Watts
+    FAST_CHARGE_RATE: int = 30000
 
 
 def _milliwatts_to_watts(value: int) -> int:
@@ -37,63 +39,69 @@ def _milliwatts_hour_to_milliampere_hour(self, value: int) -> int:
 
 def _is_battery(system_name: str) -> bool:
     """
-    Checks if the device is currently running on battery power.
+    Detects if the system is running on battery power.
     Returns:
-        bool: True if on battery, False if on AC power.
-              Defaults to False if undetectable.
+        bool: True if on battery, False if plugged in.
+              Exits on undetectable.
     """
 
     try:
-        if system == system_name:
-            output = subprocess.check_output(
-                ["wmic", "path", "Win32_Battery", "get", "BatteryStatus"],
-                stderr=subprocess.DEVNULL,
-                universal_newlines=True
-            )
-            lines = output.strip().splitlines()
-            if len(lines) >= 2:
-                status = lines[1].strip()
-                return status == '1'  # True if discharging
+        if CURRENT_PLATFORM == system_name:
+            # Using SYSTEM_POWER_STATUS struct from Windows API
+            class SYSTEM_POWER_STATUS(ctypes.Structure):
+                _fields_ = [
+                    ('ACLineStatus', ctypes.c_byte),
+                    ('BatteryFlag', ctypes.c_byte),
+                    ('BatteryLifePercent', ctypes.c_byte),
+                    ('Reserved1', ctypes.c_byte),
+                    ('BatteryLifeTime', ctypes.c_ulong),
+                    ('BatteryFullLifeTime', ctypes.c_ulong)
+                ]
 
-            # If WMIC exit, assume desktop (AC)
-            sys.exit("The Battery is not recognized.")
+            status = SYSTEM_POWER_STATUS()
+            if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+                sys.exit("[ERROR] Unable to get power status from Windows API")
 
-        elif system == system_name:
+            if status.ACLineStatus == 0:
+                return True  # On battery
+            elif status.ACLineStatus == 1:
+                return False  # On AC
+            else:
+                sys.exit("[ERROR] Battery status undetectable (Windows)")
+
+        elif CURRENT_PLATFORM == system_name:
+            # Check common AC adapter sysfs files
             ac_paths = [
                 "/sys/class/power_supply/AC/online",
                 "/sys/class/power_supply/AC0/online",
                 "/sys/class/power_supply/ACAD/online",
                 "/sys/class/power_supply/Mains/online"
             ]
+
             for path in ac_paths:
                 if os.path.exists(path):
                     with open(path, "r") as f:
                         status = f.read().strip()
-                        return status != "1"  # True if not online (on battery)
-            # Could not detect, assume AC
-            sys.exit("The Battery is not recognized.")
+                        return status != "1"  # True if not online (battery)
 
-        elif system == "Darwin":  # macOS
-            output = subprocess.check_output(
-                ["pmset", "-g", "batt"],
-                stderr=subprocess.DEVNULL,
-                universal_newlines=True
-            )
+            sys.exit("[ERROR] AC adapter status undetectable (Linux)")
+
+        elif CURRENT_PLATFORM == system_name:  # macOS
+            output = subprocess.check_output(["pmset", "-g", "batt"], universal_newlines=True)
             output = output.lower()
             if "discharging" in output:
-                return True  # On battery
-            elif "charged" in output or "charging" in output:
-                sys.exit("The Battery is not recognized.")  # On AC
-            # Unknown, assume AC
-            sys.exit("The Battery is not recognized.")
+                return True
+            elif "charging" in output or "charged" in output:
+                return False
+
+            sys.exit("[ERROR] Battery status undetectable (macOS)")
 
         else:
-            # Unsupported OS, assume AC
-            sys.exit("The Battery is not recognized.")
+            sys.exit(f"[ERROR] Unsupported OS: {CURRENT_PLATFORM}")
 
-    except Exception:
-        # On error, assume AC power
-        sys.exit("The Battery is not recognized.")
+    except Exception as e:
+        sys.exit(f"[ERROR] Failed to detect battery status: {e}")
+
 
 
 if __name__ == "__main__":

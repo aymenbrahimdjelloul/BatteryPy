@@ -3,408 +3,423 @@ This code or file is part of 'BatteryPy' project
 copyright (c) 2023, Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
-@author: Aymen Brahim Djelloul
-version: 1.1
-date: 29.07.2023
-License: MIT
-
-    sources :
-
-        // For Windows :
-        - https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/powercfg-command-line-options
-        - https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-battery
-        - https://devblogs.microsoft.com/scripting/using-windows-powershell-to-determine-if-a-laptop-is-on-battery-power/
-        - https://learn.microsoft.com/en-us/windows/win32/power/battery-status-str
+@author : Aymen Brahim Djelloul
+version : 1.1
+date    : 14.05.2025
+License : MIT
 
 """
 
-# IMPORTS
-import sys
-import re
-import csv
 import os
-import platform
+import re
+import sys
+import ctypes
 import subprocess
-import datetime
+from typing import Dict, Optional, Union, Any
+from ctypes import wintypes, Structure, byref
+from datetime import datetime
 from ._core import _Const, _is_battery
-from ._exceptions import _NotSupportedDriver, _NotSupportedDeviceType
 
-# Check is There battery
-# _is_battery("Windows")
+# Check for Battery presence
+_is_battery("Windows")
+
+class _SYSTEM_BATTERY_STATE(Structure):
+    """Windows API structure for battery information"""
+
+    _fields_ = [
+        ("AcOnLine", wintypes.BOOLEAN),
+        ("BatteryPresent", wintypes.BOOLEAN),
+        ("Charging", wintypes.BOOLEAN),
+        ("Discharging", wintypes.BOOLEAN),
+        ("Spare1", wintypes.BOOLEAN * 4),
+        ("MaxCapacity", wintypes.DWORD),
+        ("RemainingCapacity", wintypes.DWORD),
+        ("Rate", wintypes.DWORD),
+        ("EstimatedTime", wintypes.DWORD),
+        ("DefaultAlert1", wintypes.DWORD),
+        ("DefaultAlert2", wintypes.DWORD),
+    ]
 
 
 class Battery:
+    """
+    Public API class to access battery information on Windows systems.
 
-    def __init__(self):
+    This class wraps the internal _BatteryHtmlReport and provides clean methods to access
+    key battery health and status information.
 
-        # CHECK IF THE 'powercfg' is enabled
-        _powercfg_output = subprocess.check_output(["powercfg", "/L"], text=True)
+    Features:
+        - Pure python no C or C++
+        - No need for external dependencies
+        - Always returns clean values (never None).
+        - return accurate inforamtion
 
-        # CHECK IF THE 'Win32_Battery' CLASS IS SUPPORTED
-        _win32_battery_output = subprocess.run(["WMIC", "Path", "Win32_Battery"],
-                                               text=True, capture_output=True).stdout.split()
+    """
 
-        print(_powercfg_output.split())
-        if "Power" not in _powercfg_output.split():
-            raise _NotSupportedDriver("powercfg")
+    def __init__(self, report_path: Optional[str] = None):
+        """Initialize the Battery class
 
-        if "BatteryStatus" not in _win32_battery_output:
-            raise _NotSupportedDriver("Win32_Battery")
+        Args:
+            report_path: Optional custom path to store battery report
+        """
 
-        # MAKE A BATTERY REPORT
-        _battery_report_output = subprocess.run(["powercfg", "/batteryreport"], capture_output=True).stdout.split()
+        # Initialize battery report
+        self._battery_report = _BatteryHtmlReport()
 
-        # GET THE HTML BATTERY REPORT PATH
-        self.__battery_report_path = _battery_report_output[_battery_report_output.index(b'path') + 1] \
-            .decode("UTF-8")[:-1]
+        # Load necessary Windows DLLs
+        self._kernel32 = ctypes.windll.kernel32
+        self._power_prof = ctypes.windll.powrprof
 
-        # READ THE HTML BATTERY REPORT
-        with open(self.__battery_report_path, 'r') as f:
-            self.__html_content = self.__parse_html_file(f.read())
-            f.close()
+    def _get_battery_state(self) -> _SYSTEM_BATTERY_STATE:
+        """Get battery state directly from Windows API
 
-        # CHECK THE DEVICE PLATFORM
-        if not self.__is_mobile_platform():
-            print(self.__battery_report_path)
-            os.system(f"del {self.__battery_report_path}")
-            raise _NotSupportedDeviceType
+        Returns:
+            SYSTEM_BATTERY_STATE object with battery information
 
-        # CLEAR MEMORY
-        del self.__battery_report_path
-
-    @property
-    def manufacturer(self) -> str | None:
-        """ This method will return the battery manufacturer"""
-        # GET THE BATTERY MANUFACTURER USING THE BATTERY REPORT
-        return self.__get_html_text(r'<span class="label">MANUFACTURER</span>', "MANUFACTURER")
-
-    @property
-    def chemistry(self) -> str | None:
-        """ This method will return the battery chemistry"""
-        # GET THE BATTERY CHEMISTRY USING THE BATTERY REPORT
-        return self.__get_html_text(r'<span class="label">CHEMISTRY</span>', "CHEMISTRY")
+        Raises:
+            OSError: If the Windows API call fails
+        """
+        state = _SYSTEM_BATTERY_STATE()
+        result = self._power_prof.CallNtPowerInformation(
+            5, None, 0, byref(state), ctypes.sizeof(state)
+        )
+        if result != 0:
+            raise OSError(f"Failed to get battery information (Error code: {result})")
+        return state
 
     @property
-    def type(self) -> str | None:
-        """ This method will return the device battery type"""
-        process_output = subprocess.run(["WMIC", "Path", "Win32_Battery", "get", "Caption"],
-                                        text=True, capture_output=True).stdout.split()
-        # RETURN THE BATTERY TYPE
-        return f"{process_output[1]} Battery" if len(process_output) > 0 else None
-
-    @staticmethod
-    def get_current_voltage(friendly_output: bool = True) -> str | int | None:
-        """ This method will return the battery design voltage"""
-
-        # DEFINE EMPTY VARIABLE
-        design_voltage: str | int = -1
-
-        process_output = subprocess.run(["WMIC", "Path", "Win32_Battery", "get", "DesignVoltage"],
-                                        text=True, capture_output=True).stdout.split()
-
-        # GET VOLTAGE FORMAT
-        if friendly_output:
-            design_voltage = f"{int(process_output[1]) / 1000.0:.2f}v"
-
-        elif not friendly_output:
-            design_voltage = process_output[1]
-
-        # RETURN THE BATTERY VOLTAGE
-        return design_voltage if len(process_output) > 0 else None
+    def manufacturer(self) -> str:
+        """ This method will return the battery manufacturer string"""
+        return self._battery_report.battery_manufacturer()
 
     @property
-    def battery_percentage(self) -> int | None:
-        """ This method will return the current battery percentage"""
-
-        # GET BATTERY STATUS
-        process_output = subprocess.run(["WMIC", "Path", "Win32_Battery", "get", "EstimatedChargeRemaining"],
-                                        text=True, capture_output=True).stdout.split()
-
-        # RETURN THE BATTERY PERCENTAGE
-        return process_output[1] if len(process_output) > 0 else None
+    def chemistry(self) -> str:
+        """ This method will returns the battery chemistry string"""
+        return self._battery_report.battery_chemistry()
 
     @property
-    def battery_health(self) -> int | None:
-        """ This method will calculate and return the battery heath percentage"""
+    def cycle_count(self) -> str:
+        """ This method will returns the battery cycle count string"""
+        return self._battery_report.battery_cycle_count()
 
-        # DEFINE VARIABLES
-        design_charge_capacity: int | None = self.__design_battery_capacity()
-        full_charge_capacity: int | None = self.__full_battery_capacity()
+    @property
+    def design_capacity(self) -> int:
+        """ This method will return the battery design capacity"""
+        return self._battery_report.battery_design_capacity()
 
-        if design_charge_capacity and full_charge_capacity is None:
+    def battery_percentage(self) -> Optional[int]:
+        """Get current battery percentage
+
+        Returns:
+            Integer percentage (0-100) or None if unavailable
+        """
+        try:
+            state = self._get_battery_state()
+            if not state.BatteryPresent or state.MaxCapacity == 0:
+                return None
+            percent = int((state.RemainingCapacity / state.MaxCapacity) * 100)
+            return min(percent, 100)
+        except OSError as e:
             return None
 
-        # CALCULATE BATTERY HEALTH PERCENTAGE
-        battery_health: int = int(full_charge_capacity * 100 / design_charge_capacity)
+    def is_plugged(self) -> Optional[bool]:
+        """Check if the device is plugged into AC power
 
-        # CLEAR MEMORY
-        del design_charge_capacity, full_charge_capacity
+        Returns:
+            True if plugged in, False if on battery, None on error
 
-        return battery_health if battery_health <= 100 else 100
-
-    @property
-    def is_plugged(self) -> bool:
-        """ This method will tell if the battery is plugged to the power or not"""
-
-        # DEFINE EMPTY PLUGGED VARIABLE
-        is_plugged: bool | None
-
-        process_output: int = int(subprocess.run(["WMIC", "Path", "Win32_Battery", "get", "BatteryStatus"],
-                                                 text=True, capture_output=True).stdout.split()[1])
-
-        if process_output == 1:
-            is_plugged = False
-
-        elif process_output == 2:
-            is_plugged = True
-
-        else:
-            is_plugged = None
-
-        # CLEAR MEMORY
-        del process_output
-
-        return is_plugged
-
-    @staticmethod
-    def power_management_mode(aliased: bool = True) -> str | tuple | None:
-        """ This method will return the current operating system power mode used"""
-
-        # GET THE POWER MANAGEMENT MODE
-        power_mode_output = subprocess.check_output(["powercfg", "/L"], text=True).split()
-        # Check for None output
-        if 'GUID:' not in power_mode_output:
+        """
+        try:
+            state = self._get_battery_state()
+            return bool(state.AcOnLine)
+        except OSError as e:
             return None
 
-        power_mode_id: str = power_mode_output[power_mode_output.index('GUID:') + 1]
-        power_mode_text: str = power_mode_output[len(power_mode_output) - 2]
+    def remaining_capacity(self) -> Optional[int]:
+        """Get remaining battery capacity in mWh
 
-        return power_mode_text.strip('()') if aliased else (power_mode_id, power_mode_text.strip('()'))
-
-    @property
-    def is_fast_charging(self) -> bool | None:
-        """ This method will return if the device is fast charged or not"""
-
-        # DEFINE THE MINIMUM FAST CHARGE WATTAGE VALUE SOURCE :
-        # https://www.pcworld.com/article/1915376/best-laptop-usb-c-pd-chargers.html#:~:text=Smaller%20laptops%20may
-        # %20require%20just,15%2Dinch%20and%20larger%20notebooks.
-        fast_charge_wattage: int = 40
-
-        # CONVERT THE CHARGE RATING VALUE FROM MILLI-WATTS-HOURS TO WATTS-HOURS
-        charge_rate_watts = self.__milliwatts_to_watts(self.__get_charge_rate())
-
-        # CHECK IF THE BATTERY IS CHARGING
-        if charge_rate_watts == 0:
+        Returns:
+            Integer capacity in mWh or None on error
+        """
+        try:
+            state = self._get_battery_state()
+            return state.RemainingCapacity if state.BatteryPresent else None
+        except OSError as e:
             return None
 
-        return True if charge_rate_watts >= fast_charge_wattage else False
+    def charge_rate(self) -> Optional[int]:
+        """Get current charge/discharge rate in mW
 
-    # @staticmethod
-    # def get_estimated_full_charge_time(friendly_format: bool = False) -> int | str | None:
-    #     """ This method will calculate the time remaining to full charge the battery in seconds"""
+        Returns:
+            Integer rate in mW (positive when charging, negative when discharging)
+            or None on error
+        """
+        try:
+            state = self._get_battery_state()
+            if not state.BatteryPresent:
+                return None
+            # The Rate field might need conversion based on charging/discharging status
+            rate = state.Rate
+            # Some systems report positive rate when discharging and negative when charging
+            if state.Discharging and rate > 0:
+                rate = -rate
+            elif state.Charging and rate < 0:
+                rate = abs(rate)
+            return rate
+        except OSError as e:
+            return None
 
-    # @staticmethod
-    # def get_estimated_time_remaining(friendly_format: bool = False) -> int | str | None:
-    #     """ This method will calculate and return the estimated time for battery duration in seconds"""
+    def is_fast_charge(self) -> bool:
+        """ This method will return if the battery is getting fast charging """
+        return True if self.charge_rate() > _Const.FAST_CHARGE_RATE else False
 
-    def get_text_report(self, file_path: str = os.getcwd()) -> str:
-        """ This method will create a battery report in text file"""
+    def battery_health(self) -> int:
+        """Calculate battery health percentage compared to design capacity.
 
-        battery_info_dict: dict = self.get_all_info()
+        Returns:
+            Integer percentage (0-100), returns 0 if unavailable or invalid.
+        """
+        design_capacity = self._battery_report.battery_design_capacity()
+        full_capacity = self._battery_report.battery_full_capacity()
 
-        # FORMAT THE DICTIONARY TO MAKE IT READABLE
-        max_key_length: int = max(len(str(key)) for key in battery_info_dict.keys())
-        max_value_length: int = max(len(str(value)) for value in battery_info_dict.values())
-        formatted_string: str = ""
+        if design_capacity > 0 and full_capacity > 0:
+            health = (full_capacity / design_capacity) * 100
+            return min(int(health), 100)  # Ensure max 100%
 
-        with open(f"{file_path}\\core-report.txt", 'w') as file:
-
-            for key, value in battery_info_dict.items():
-                # REFORMAT THE KEY
-                key: str = key.title().replace('_', ' ')
-
-                key_padding: str = " " * (max_key_length - len(str(key)))
-                value_padding: str = " " * (max_value_length - len(str(value)))
-
-                formatted_string += f"{str(key)} :{key_padding}     {str(value)}{value_padding}\n"
-
-            # CLEAR MEMORY
-            del (key_padding, value_padding, key, value,
-                 max_key_length, max_value_length, battery_info_dict)
-
-            for row in formatted_string:
-                file.write(row)
-
-            file.close()
-
-        # CLEAR MEMORY
-        del row, formatted_string, file
-
-        # RETURN FILE REPORT PATH
-        return f"{file_path}\\core-report.txt"
-
-    def get_csv_report(self, file_path: str = os.getcwd()):
-        """ This method will create a battery report in csv file"""
-
-        battery_info_dict: dict = self.get_all_info()
-
-        with open(f"{file_path}\\core-report.csv", 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Key", "Value"])  # Write Header row
-
-            for key, value in battery_info_dict.items():
-                writer.writerow([key, value])
-
-            file.close()
-
-        # Return the file report path
-        return f"{file_path}\\core-report.csv"
-
-    def __design_battery_capacity(self) -> int:
-        """ This method will get the design battery capacity in milliwatts-hour"""
-
-        # DEFINE VARIABLES
-        design_capacity: str = ""
-        extracted_text: str = self.__get_html_text(r'<span class="label">DESIGN CAPACITY</span>')
-
-        for char in extracted_text:
-            if char.isdigit():
-                design_capacity = design_capacity + char
-
-        # CLEAR MEMORY
-        del extracted_text, char
-        return int(design_capacity)
-
-    def __full_battery_capacity(self) -> int:
-        """ This method will get the full charge battery capacity"""
-
-        # DEFINE VARIABLES
-        full_capacity: str = ""
-        extracted_text: str = self.__get_html_text(r'<span class="label">FULL CHARGE CAPACITY</span>')
-
-        for char in extracted_text:
-            if char.isdigit():
-                full_capacity = full_capacity + char
-
-        # CLEAR MEMORY
-        del extracted_text, char
-        return int(full_capacity)
+        return 0
 
     @staticmethod
-    def __get_charge_rate() -> int | None:
-        """ This method will return the battery charge rate when it is charging in milli-watts"""
+    def get_datetime() -> str:
+        """Get current datetime formatted as string
 
-        # GET THE CHARGE RATE USING THE 'gwmi' tool
-        process_output = subprocess.run(["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-                                         "gwmi", "-Class", "batterystatus", "-Namespace", "root\\wmi",
-                                         # "|", "Select-Object", "Property", "ChargeRate"
-                                         ], capture_output=True, text=True).stdout.split()
+        Returns:
+            Formatted datetime string
+        """
+        return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        # RETURN THE CURRENT BATTERY CHARGE RATE
-        return int(process_output[process_output.index("ChargeRate") + 2]) if "ChargeRate" in process_output else None
+    def get_result(self, cleanup_report: bool = True) -> Dict[str, Union[str, bool, None]]:
+        """Collect all battery information into a single dictionary
 
-    def __is_mobile_platform(self) -> bool:
-        """ This method will return the platform role 'Desktop' or 'Mobile'"""
+        Args:
+            cleanup_report: Whether to delete the report file after parsing
 
-        # DEFINE VARIABLES
-        search_pattern: str = r"Mobile"
-        html_text_output: str = self.__get_html_text(search_pattern)
+        Returns:
+            Dictionary with all available battery information
+        """
 
-        # GET SEARCH PATTERN MATCH
-        return True if re.match(search_pattern, html_text_output, re.IGNORECASE) else False
+        # Build the result dictionary
+        data = {
+            'Battery Percentage': f"{self.battery_percentage()}%" if self.battery_percentage() is not None else "Unknown",
+            'Power Status': 'Plugged In' if self.is_plugged() else 'On Battery' if self.is_plugged() is not None else "Unknown",
+            'Remaining Capacity': f"{self.remaining_capacity()} mWh" if self.remaining_capacity() is not None else "Unknown",
+            # 'Full Charge Capacity': f"{self.full_charge_capacity()} mWh" if self.full_charge_capacity() is not None else "Unknown",
+            'Charge Rate': f"{self.charge_rate()} mW" if self.charge_rate() is not None else "Unknown",
+            'Fast Charging': self.is_fast_charge(),
+            'Manufacturer': self.manufacturer,
+            'Chemistry': self.chemistry,
+            'Cycle Count': self.cycle_count,
+            'Battery Health': f"{self.battery_health()}%" if self.battery_health() is not None else 'Unknown',
+            'Report Generated': self.get_datetime(),
+        }
 
-    def __get_html_text(self, search_pattern: str, info_text: str = "", _chars_count: int = 75) -> str | None:
-        """ This method will extract the requested information from the body html parsed content"""
+        # Check if report file still exists (if cleanup wasn't requested)
+        if not cleanup_report and os.path.exists(self._report_path):
+            data['Report Path'] = self._report_path
 
-        # DEFINE VARIABLES
-        __html_text: str
-        search_pattern_index: int = -1
+        return data
 
-        # GET SEARCH PATTERN MATCH
-        search_pattern_match = re.search(search_pattern, self.__html_content, re.IGNORECASE)
 
-        if search_pattern_match:
-            search_pattern_index: int = search_pattern_match.start()
+class _BatteryHtmlReport:
+    """
+    Internal helper class to generate, parse, and cache Windows battery reports using 'powercfg'.
 
-        # STORE THE HTML TEXT
-        __html_text: str = self.__html_content[search_pattern_index:search_pattern_index + _chars_count]
+    This class uses the Windows 'powercfg /batteryreport' command to generate a detailed battery
+    health and status report in HTML format. The report is automatically cached to avoid redundant
+    command executions and file reads. It provides methods to extract key information such as
+    manufacturer, chemistry, design capacity, full charge capacity, and cycle count.
 
-        # CLEAR MEMORY
-        del search_pattern_match
+    Features:
+        - Automatically generates a fresh report if no cache exists.
+        - Parses the battery report HTML to extract specific data points.
+        - Caches the report to a predefined path for efficient reuse.
+        - Cleans up temporary files after report generation.
+        - Provides clean data extraction methods with error handling and fallbacks.
 
-        # CLEAR & NORMALIZE THE HTML TEXT FROM HTML TAG AND RETURN IT
-        return self.__html_text_normalization(__html_text, info_text)
+    Methods:
+        - battery_manufacturer(): Returns the battery manufacturer as a string.
+        - battery_chemistry(): Returns the battery chemistry type as a string.
+        - battery_design_capacity(): Returns the design capacity in mWh as integer.
+        - battery_full_capacity(): Returns the full charge capacity in mWh as integer.
+        - battery_cycle_count(): Returns the battery cycle count as integer.
 
-    @staticmethod
-    def __html_text_normalization(html_text: str, info_text: str = "") -> str:
-        """ This method will normalize and clean the extracted html text"""
+    Notes:
+        - This class is designed for internal use and should not be used directly by external modules.
+        - It is OS-specific and works only on Windows systems where 'powercfg' is available.
+        - Handles exceptions gracefully and returns 'Unknown' or 0 where data is missing.
 
-        # Define the normalized text variable
-        normalized_text: str = ""
+    Example:
+        report = _BatteryHtmlReport()
+        manufacturer = report.battery_manufacturer()
+        chemistry = report.battery_chemistry()
+    """
 
-        # Implement a smple algorithm to detect and remove html tags & attributes
-        # from the html text
-        inside_tag: bool = False
-        inside_single_quote: bool = False
-        inside_double_quote: bool = False
+    # Define relative cache directory inside user profile or script dir fallback
+    _CACHE_FILENAME: str = f".cache_report"
+    _CACHE_REPORT_PATH: str = os.path.join("batterypy", _CACHE_FILENAME)
 
-        for char in html_text:
-            if char == "<" and not inside_tag:
-                inside_tag = True
-                continue
+    _REPORT_COMMAND: list = ["powercfg", "/batteryreport"]
 
-            elif char == ">" and inside_tag:
-                inside_tag = False
-                continue
+    _SEARCH_PATTERNS: dict = {
+        "manufacturer": r'MANUFACTURER<\/span>\s*<\/td>\s*<td[^>]*>(.*?)<\/td>',
+        'chemistry': r'CHEMISTRY<\/span>\s*<\/td>\s*<td[^>]*>(.*?)<\/td>',
+        'design_capacity': r'DESIGN CAPACITY<\/span>\s*<\/td>\s*<td[^>]*>(.*?)<\/td>',
+        'full_capacity': r'FULL CHARGE CAPACITY<\/span>\s*<\/td>\s*<td[^>]*>(.*?)<\/td>',
+        'cycle_count': r'CYCLE COUNT<\/span>\s*<\/td>\s*<td[^>]*>(.*?)<\/td>'
+    }
 
-            if inside_tag:
-                if char == "'" and not inside_double_quote:
-                    inside_single_quote = not inside_single_quote
-
-                elif char == '"' and not inside_single_quote:
-                    inside_double_quote = not inside_double_quote
-
+    def __init__(self, force_refresh: bool = False):
+        self._report_data: Optional[str] = None
+        try:
+            if not force_refresh and os.path.exists(self._CACHE_REPORT_PATH):
+                self._report_data = self._load_cache()
             else:
-                normalized_text += char
+                self._report_data = self._generate_battery_report()
+                if self._report_data:
+                    self._save_cache(self._report_data)
+        except Exception as e:
+            print(f"[BatteryHtmlReport] Error initializing: {e}")
+            self._report_data = None
 
-        # Return the normalized text
-        return normalized_text.replace(info_text, "")
+    def _load_cache(self) -> str:
+        """ This method will read and return html report cached file"""
+
+        try:
+            with open(self._CACHE_REPORT_PATH, "r", encoding="utf-8") as f:
+                data = f.read()
+            if data:
+                return data
+        except Exception as e:
+            print(f"[BatteryHtmlReport] Error loading cache: {e}")
+        return ""
+
+    def _generate_battery_report(self) -> Optional[str]:
+        """Generates the battery report using 'powercfg', returns its HTML content as string, and cleans up the report file."""
+
+        try:
+            # Run powercfg /batteryreport
+            result = subprocess.run(
+                self._REPORT_COMMAND,
+                capture_output=True,
+                check=True,
+                shell=False
+            )
+
+            output_text = result.stdout.decode(errors='ignore')
+
+            # Find report path in output (supports double quotes, spaces)
+            match = re.search(r'saved to\s+file path\s+(.+)', output_text, re.IGNORECASE)
+            if not match:
+                print("[BatteryHtmlReport] ❗ Report path not found in output.")
+                return None
+
+            report_path = match.group(1).strip().strip('"')
+
+            # Ensure file exists before trying to read it
+            if not os.path.isfile(report_path):
+                print(f"[BatteryHtmlReport] ❗ Report file not found at: {report_path}")
+                return None
+
+            try:
+                # Read file content
+                with open(report_path, "r", encoding="utf-8") as f:
+                    data = f.read()
+
+                return data
+
+            except (OSError, IOError) as file_err:
+                print(f"[BatteryHtmlReport] ❗ Error reading report: {file_err}")
+                return None
+
+            finally:
+                # Always attempt cleanup, even if reading fails
+                try:
+                    os.remove(report_path)
+                    # print(f"[BatteryHtmlReport] ✅ Cleaned up report file at: {report_path}")
+
+                except (PermissionError, OSError) as cleanup_err:
+                    print(f"[BatteryHtmlReport] ⚠ Could not delete report file: {cleanup_err}")
+
+        except subprocess.CalledProcessError as e:
+            print(f"[BatteryHtmlReport] ❗ Command failed (exit {e.returncode})")
+            print(f"  Stdout: {e.stdout.decode(errors='ignore')}")
+            print(f"  Stderr: {e.stderr.decode(errors='ignore')}")
+        except Exception as e:
+            print(f"[BatteryHtmlReport] ❗ Unexpected error: {e}")
+
+        return None
+
+    def _save_cache(self, data: str) -> None:
+        """ This method will save the generated html report"""
+
+        try:
+            with open(self._CACHE_REPORT_PATH, "w", encoding="utf-8") as f:
+                f.write(data)
+        except Exception as e:
+            print(f"[BatteryHtmlReport] Error saving cache: {e}")
+
+    def _parse_html(self, query: str, as_int: bool = False) -> str | int:
+        """ This method will parse the html """
+
+        if not self._report_data:
+            return "Unknown" if not as_int else -1
+
+        pattern = self._SEARCH_PATTERNS.get(query)
+        if not pattern:
+            return "Unknown" if not as_int else -1
+
+        match = re.search(pattern, self._report_data, re.IGNORECASE | re.DOTALL)
+        if match:
+            raw_text = match.group(1)
+            cleaned_text = self._normalized_text(raw_text)
+
+            if as_int:
+                # Remove commas, spaces, non-digits, and mWh
+                digits = re.sub(r'[^\d]', '', cleaned_text)
+                return int(digits) if digits.isdigit() else -1
+            else:
+                return cleaned_text
+
+        return "Unknown" if not as_int else -1
 
     @staticmethod
-    def __parse_html_file(html_content: str) -> str:
-        """ This method will extract the body section from the html content"""
+    def _normalized_text(html_text: str) -> str:
+        """ This method will clean the text and remove html tags"""
 
-        # DEFINE EMPTY VARIABLE
-        body_tag_index: int = -1
-        closing_body_index: int = -1
+        text = re.sub(r'<[^>]*>', '', html_text)
+        text = text.replace('&nbsp;', ' ')
+        return text.strip()
 
-        body_tag_match = re.search(r"<body>", html_content, re.IGNORECASE)
-        if body_tag_match:
-            body_tag_index = body_tag_match.start()
+    # Public APIs
+    def battery_manufacturer(self) -> str:
+        """ This method get the battery manufacturer string"""
+        return self._parse_html("manufacturer")
 
-        closing_tag_match = re.search(r"</body>", html_content, re.IGNORECASE)
+    def battery_chemistry(self) -> str:
+        """ This method get the battery chmistry string"""
+        return self._parse_html("chemistry")
 
-        if closing_tag_match:
-            closing_body_index = closing_tag_match.start()
+    def battery_design_capacity(self) -> str | int:
+        """ This method get the battery design capacity"""
+        return self._parse_html("design_capacity", as_int=True)
 
-        # RETURN THE EXTRACTED HTML BODY
-        return html_content[body_tag_index + 6:closing_body_index] if body_tag_match and closing_tag_match \
-            else html_content
+    def battery_full_capacity(self) -> str | int:
+        """ This method get the battery full capacity"""
+        return self._parse_html("full_capacity", as_int=True)
 
-    def get_all_info(self) -> dict:
-        """ This method will return all information that core can retrieve"""
-
-        # DEFINE THE INFORMATION DICT
-        return {'python_version': platform.python_version(), 'BatteryPy_version': '1.0.1',
-                'battery_manufacturer': self.manufacturer, 'battery_chemistry': self.chemistry,
-                'battery_voltage': self.get_current_voltage(False),
-                'friendly_battery_voltage': self.get_current_voltage(True),
-                'operating_system': platform.system(),
-                'battery_type': self.type, 'battery_health': f"{self.battery_health} %",
-                'design_capacity': self.__design_battery_capacity(),
-                'full_charge_capacity': self.__full_battery_capacity(),
-                'report_date': datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")}
+    def battery_cycle_count(self) -> str | int:
+        """ This method get the battery cycle count string"""
+        return 0 if self._parse_html("cycle_count") == "-" else self._parse_html("cycle_count")
 
 
 if __name__ == "__main__":
-    sys.exit()
+    sys.exit(0)

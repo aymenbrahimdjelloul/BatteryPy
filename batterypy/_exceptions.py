@@ -1,7 +1,8 @@
 """
-@author: Aymen Brahim Djelloul
-date : 29.07.2023
-License: MIT
+@author : Aymen Brahim Djelloul
+version : 1.1
+date    : 29.07.2023
+License : MIT
 
 """
 
