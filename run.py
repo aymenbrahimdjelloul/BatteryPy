@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 
 """
-PowerPulse - A sophisticated CLI tool for monitoring and reporting battery information
+This code or file is part of 'BatteryPy' project
+copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
+use of this source code is governed by MIT License that can be found on the project folder.
 
-This tool uses BatteryPy to collect battery data and displays it with rich color formatting.
-It features interactive commands, beautifully aligned output, and options to save reports.
+    // BatteryPy - A sophisticated CLI tool for monitoring and reporting battery information
+    // This tool uses BatteryPy to collect battery data and displays it with rich color formatting.
+    // It features interactive commands, beautifully aligned output, and options to save reports.
+
 """
 
 # IMPORTS
@@ -14,10 +18,53 @@ import sys
 import json
 import shutil
 import argparse
+
+import colorama
+
 import batterypy
 import datetime
 from time import sleep
 from typing import Any
+from batterypy._exceptions import _BatteryNotDetected
+
+# Handling coloring
+try:
+
+    # use colorama for best coloring
+    from colorama import Fore, Style
+
+    class Colors:
+        """
+        A utility class that defines CLI coloring using 'colorama'
+        """
+        UNDERLINE = Style.BRIGHT
+        YELLOW = Fore.YELLOW
+        GREEN = Fore.GREEN
+        RED = Fore.RED
+        CYAN = Fore.CYAN
+        BLUE = Fore.BLUE
+        BOLD = Style.NORMAL
+        END = Style.RESET_ALL
+
+except ImportError:
+
+    # Set colorama None
+    colorama = None
+
+    # Fallback with traditional ANSI color codes
+    class Colors:
+        """
+        A utility class that defines ANSI escape sequences for styling terminal text output.
+        """
+        BLUE = "\033[94m"
+        CYAN = "\033[96m"
+        GREEN = "\033[92m"
+        YELLOW = "\033[93m"
+        RED = "\033[91m"
+        BOLD = "\033[1m"
+        UNDERLINE = "\033[4m"
+        END = "\033[0m"
+
 
 # Application constants
 VERSION: str = batterypy.VERSION
@@ -26,31 +73,15 @@ APP_CAPTION: str = f"BatteryPy - v{VERSION}"
 APP_WEBSITE: str = "https://aymenbrahimdjelloul.github.io/BatteryPy/"
 
 
-# ANSI color codes and styling for terminal output
-class Colors:
-    HEADER = "\033[95m"
-    BLUE = "\033[94m"
-    CYAN = "\033[96m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    BOLD = "\033[1m"
-    UNDERLINE = "\033[4m"
-    END = "\033[0m"
-    BG_BLACK = "\033[40m"
-    BG_RED = "\033[41m"
-    BG_GREEN = "\033[42m"
-    BG_YELLOW = "\033[43m"
-    BG_BLUE = "\033[44m"
-    BG_MAGENTA = "\033[45m"
-    BG_CYAN = "\033[46m"
-    BG_WHITE = "\033[47m"
 
-
-class BatteryInfoCLI:
+class BatteryCLI:
     """Interactive CLI tool for displaying and saving battery information"""
 
     def __init__(self):
+
+        # Initialize colorama if exists
+        if colorama:
+            colorama.init()
 
         # Create BatteryPy object class
         self.battery = batterypy.Battery()
@@ -462,24 +493,22 @@ class BatteryInfoCLI:
                 print(f"  {Colors.GREEN}✓ {report_type}: {path}{Colors.END}")
 
 
-def main():
+def main() -> int:
     """Main function to run the CLI tool"""
 
     try:
-        cli = BatteryInfoCLI()
+        cli = BatteryCLI()
         cli.run()
+        return 0
 
     except KeyboardInterrupt:
         print(f"\n{Colors.YELLOW}Battery information gathering interrupted.{Colors.END}")
-        sys.exit(0)
+        return 0
 
-    except Exception:
-        print(f"{Colors.YELLOW} {APP_CAPTION} Cannot run ! Please retry again .{Colors.END}")
-
-        # Wait for user input
-        input()
-
-    sys.exit(1)
+    except _BatteryNotDetected:
+        print(f"\n\n  {Colors.YELLOW}{APP_CAPTION} Cannot run! Please retry again.{Colors.END}\n")
+        input("     Press Enter to exit.")
+        return 1
 
 
 if __name__ == "__main__":
