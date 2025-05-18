@@ -1,11 +1,11 @@
 """
 This code or file is part of 'BatteryPy' project
-copyright (c) 2023, Aymen Brahim Djelloul, All rights reserved.
+copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
 @author : Aymen Brahim Djelloul
-version : 1.1
-date    : 14.05.2025
+version : 1.2
+date    : 17.05.2025
 License : MIT
 
 """
@@ -20,9 +20,9 @@ from typing import Dict, Optional, Union, Any
 from ctypes import wintypes, Structure, byref
 from datetime import datetime
 from ._core import _Const, _is_battery
+from ._exceptions import _BatteryNotDetected
 
-# Check for Battery presence
-_is_battery("Windows")
+
 
 class _SYSTEM_BATTERY_STATE(Structure):
     """Windows API structure for battery information"""
@@ -57,12 +57,17 @@ class Battery:
 
     """
 
-    def __init__(self, report_path: Optional[str] = None):
+    def __init__(self) -> None:
+
         """Initialize the Battery class
 
         Args:
             report_path: Optional custom path to store battery report
         """
+
+        # Check for Battery presence
+        if not _is_battery("Windows"):
+            raise _BatteryNotDetected()
 
         # Initialize battery report
         self._battery_report = _BatteryHtmlReport()
@@ -120,7 +125,7 @@ class Battery:
                 return None
             percent = int((state.RemainingCapacity / state.MaxCapacity) * 100)
             return min(percent, 100)
-        except OSError as e:
+        except OSError:
             return None
 
     def is_plugged(self) -> Optional[bool]:
@@ -133,7 +138,7 @@ class Battery:
         try:
             state = self._get_battery_state()
             return bool(state.AcOnLine)
-        except OSError as e:
+        except OSError:
             return None
 
     def remaining_capacity(self) -> Optional[int]:
@@ -145,7 +150,7 @@ class Battery:
         try:
             state = self._get_battery_state()
             return state.RemainingCapacity if state.BatteryPresent else None
-        except OSError as e:
+        except OSError:
             return None
 
     def charge_rate(self) -> Optional[int]:
@@ -167,7 +172,7 @@ class Battery:
             elif state.Charging and rate < 0:
                 rate = abs(rate)
             return rate
-        except OSError as e:
+        except OSError:
             return None
 
     def is_fast_charge(self) -> bool:
@@ -213,7 +218,6 @@ class Battery:
             'Battery Percentage': f"{self.battery_percentage()}%" if self.battery_percentage() is not None else "Unknown",
             'Power Status': 'Plugged In' if self.is_plugged() else 'On Battery' if self.is_plugged() is not None else "Unknown",
             'Remaining Capacity': f"{self.remaining_capacity()} mWh" if self.remaining_capacity() is not None else "Unknown",
-            # 'Full Charge Capacity': f"{self.full_charge_capacity()} mWh" if self.full_charge_capacity() is not None else "Unknown",
             'Charge Rate': f"{self.charge_rate()} mW" if self.charge_rate() is not None else "Unknown",
             'Fast Charging': self.is_fast_charge(),
             'Manufacturer': self.manufacturer,
@@ -295,7 +299,7 @@ class _BatteryHtmlReport:
         """ This method will read and return html report cached file"""
 
         try:
-            with open(self._CACHE_REPORT_PATH, "r", encoding="utf-8") as f:
+            with open(self._CACHE_REPORT_PATH, "rb", encoding="utf-8") as f:
                 data = f.read()
             if data:
                 return data
@@ -304,7 +308,9 @@ class _BatteryHtmlReport:
         return ""
 
     def _generate_battery_report(self) -> Optional[str]:
-        """Generates the battery report using 'powercfg', returns its HTML content as string, and cleans up the report file."""
+        """Generates the battery report using 'powercfg',
+         returns its HTML content as string, and cleans up the report file.
+         """
 
         try:
             # Run powercfg /batteryreport
@@ -312,7 +318,6 @@ class _BatteryHtmlReport:
                 self._REPORT_COMMAND,
                 capture_output=True,
                 check=True,
-                shell=False
             )
 
             output_text = result.stdout.decode(errors='ignore')
@@ -332,7 +337,7 @@ class _BatteryHtmlReport:
 
             try:
                 # Read file content
-                with open(report_path, "r", encoding="utf-8") as f:
+                with open(report_path, "rb", encoding="utf-8") as f:
                     data = f.read()
 
                 return data
@@ -347,15 +352,14 @@ class _BatteryHtmlReport:
                     os.remove(report_path)
                     # print(f"[BatteryHtmlReport] ✅ Cleaned up report file at: {report_path}")
 
-                except (PermissionError, OSError) as cleanup_err:
-                    print(f"[BatteryHtmlReport] ⚠ Could not delete report file: {cleanup_err}")
+                except (PermissionError, OSError):
+                    pass
 
         except subprocess.CalledProcessError as e:
-            print(f"[BatteryHtmlReport] ❗ Command failed (exit {e.returncode})")
-            print(f"  Stdout: {e.stdout.decode(errors='ignore')}")
-            print(f"  Stderr: {e.stderr.decode(errors='ignore')}")
+            pass
+
         except Exception as e:
-            print(f"[BatteryHtmlReport] ❗ Unexpected error: {e}")
+            pass
 
         return None
 
@@ -365,8 +369,8 @@ class _BatteryHtmlReport:
         try:
             with open(self._CACHE_REPORT_PATH, "w", encoding="utf-8") as f:
                 f.write(data)
-        except Exception as e:
-            print(f"[BatteryHtmlReport] Error saving cache: {e}")
+        except Exception:
+            pass
 
     def _parse_html(self, query: str, as_int: bool = False) -> str | int:
         """ This method will parse the html """

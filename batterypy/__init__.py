@@ -1,11 +1,11 @@
 """
 This code or file is part of 'BatteryPy' project
-copyright (c) 2023, Aymen Brahim Djelloul, All rights reserved.
+copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
 @author : Aymen Brahim Djelloul
-version : 1.1
-date    : 14.05.2025
+version : 1.2
+date    : 17.05.2025
 License : MIT
 
 """
@@ -15,7 +15,7 @@ import sys
 from platform import system
 
 # CONSTANTS
-VERSION: str = "1.1"
+VERSION: str = "1.2"
 CURRENT_PLATFORM: str = system()
 
 # Initialize BatteryPy

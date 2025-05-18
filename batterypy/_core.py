@@ -1,11 +1,11 @@
 """
 This code or file is part of 'BatteryPy' project
-copyright (c) 2023, Aymen Brahim Djelloul, All rights reserved.
+copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
 @author: Aymen Brahim Djelloul
-version: 1.1
-date: 14.05.2025
+version: 1.2
+date: 17.05.2025
 License: MIT
 
 """
@@ -16,6 +16,7 @@ import sys
 import ctypes
 import subprocess
 from batterypy import CURRENT_PLATFORM
+from ._exceptions import _BatteryNotDetected
 
 
 class _Const:
@@ -47,8 +48,9 @@ def _is_battery(system_name: str) -> bool:
 
     try:
         if CURRENT_PLATFORM == system_name:
-            # Using SYSTEM_POWER_STATUS struct from Windows API
-            class SYSTEM_POWER_STATUS(ctypes.Structure):
+
+            # Using _SYSTEM_POWER_STATUS struct from Windows API
+            class _SYSTEM_POWER_STATUS(ctypes.Structure):
                 _fields_ = [
                     ('ACLineStatus', ctypes.c_byte),
                     ('BatteryFlag', ctypes.c_byte),
@@ -58,16 +60,17 @@ def _is_battery(system_name: str) -> bool:
                     ('BatteryFullLifeTime', ctypes.c_ulong)
                 ]
 
-            status = SYSTEM_POWER_STATUS()
+            status = _SYSTEM_POWER_STATUS()
             if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
-                sys.exit("[ERROR] Unable to get power status from Windows API")
+                raise _BatteryNotDetected("[ERROR] Unable to get power status from Windows API")
 
             if status.ACLineStatus == 0:
                 return True  # On battery
             elif status.ACLineStatus == 1:
-                return False  # On AC
+                return False
+
             else:
-                sys.exit("[ERROR] Battery status undetectable (Windows)")
+                raise _BatteryNotDetected("[ERROR] Battery status undetectable (Windows)")
 
         elif CURRENT_PLATFORM == system_name:
             # Check common AC adapter sysfs files
@@ -84,7 +87,7 @@ def _is_battery(system_name: str) -> bool:
                         status = f.read().strip()
                         return status != "1"  # True if not online (battery)
 
-            sys.exit("[ERROR] AC adapter status undetectable (Linux)")
+            raise _BatteryNotDetected("[ERROR] AC adapter status undetectable (Linux)")
 
         elif CURRENT_PLATFORM == system_name:  # macOS
             output = subprocess.check_output(["pmset", "-g", "batt"], universal_newlines=True)
@@ -94,14 +97,13 @@ def _is_battery(system_name: str) -> bool:
             elif "charging" in output or "charged" in output:
                 return False
 
-            sys.exit("[ERROR] Battery status undetectable (macOS)")
+            raise _BatteryNotDetected("[ERROR] Battery status undetectable (macOS)")
 
         else:
-            sys.exit(f"[ERROR] Unsupported OS: {CURRENT_PLATFORM}")
+            raise _BatteryNotDetected(f"[ERROR] Unsupported OS: {CURRENT_PLATFORM}")
 
     except Exception as e:
-        sys.exit(f"[ERROR] Failed to detect battery status: {e}")
-
+        raise _BatteryNotDetected(e)
 
 
 if __name__ == "__main__":
