@@ -11,17 +11,4 @@ License : MIT
 """
 
 # IMPORTS
-import sys
-from platform import system
-
-# CONSTANTS
-VERSION: str = "1.2"
-CURRENT_PLATFORM: str = system()
-
-# Initialize BatteryPy
-if CURRENT_PLATFORM == "Windows":
-    from ._win_battery import *
-elif CURRENT_PLATFORM == "Linux":
-    from ._linux_battery import *
-else:
-    sys.exit("Unsupported platform")
+from ._batterypy import *
