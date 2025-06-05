@@ -18,20 +18,21 @@ import sys
 import json
 import shutil
 import argparse
-import batterypy
 import datetime
 from time import sleep
 from typing import Any
-from batterypy import BatteryPyException, caption
 
-# Handling coloring
+# Handle missing imports
 try:
+    import batterypy
+    from batterypy import BatteryPyException
 
-    # use colorama for best coloring
+    # use colorama for the best coloring
     from colorama import Fore, Style, init
 
     # Initialize colorama
     init(autoreset=True)
+
 
     class Colors:
         """
@@ -68,6 +69,14 @@ except ImportError:
         END = "\033[0m"
 
 
+except BatteryPyException:
+    print("\n BatteryPy cannot detect any battery. \n ")
+    input("Press enter to exit...")
+
+    # Exit the app
+    sys.exit(1)
+
+
 class BatteryCLI:
     """Interactive CLI tool for displaying and saving battery information"""
 
@@ -92,12 +101,14 @@ class BatteryCLI:
         try:
             terminal_size = shutil.get_terminal_size()
             return terminal_size.columns
+
         except (AttributeError, OSError):
             return 80  # Default width if unable to determine
 
     @staticmethod
     def _parse_arguments() -> argparse.Namespace:
         """Parse command line arguments"""
+
         parser = argparse.ArgumentParser(
             description=f"{caption} - Battery Information Monitoring Tool",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -157,7 +168,7 @@ class BatteryCLI:
             self._display_version()
             return
 
-        # Always run in interactive mode unless explicitly displaying version only
+        # Always run in interactive mode unless explicitly displaying the version only
         self.args.interactive = True
 
         # Display initial battery info
@@ -191,12 +202,15 @@ class BatteryCLI:
         try:
             os.system(f"title {batterypy.caption}" if batterypy.platform == "Windows" else
                       f'echo -ne "\033]0;{batterypy.caption}\007"')
+            return None
+
         except OSError:
             return None
 
     @staticmethod
     def _get_battery_health_color(health_percent: float) -> str:
         """Return appropriate color code based on battery health percentage"""
+
         if health_percent >= 80:
             return Colors.GREEN
         elif health_percent >= 50:
@@ -207,6 +221,7 @@ class BatteryCLI:
     @staticmethod
     def _get_battery_level_color(level_percent: float) -> str:
         """Return appropriate color code based on battery level percentage"""
+
         if level_percent >= 80:
             return Colors.GREEN
         elif level_percent >= 30:
@@ -223,6 +238,7 @@ class BatteryCLI:
 
     def _center_text(self, text: str) -> str:
         """Center text considering ANSI codes."""
+
         plain_text = self._strip_ansi(text)
         padding = max(0, (self.terminal_width - len(plain_text)) // 2)
         return f"{' ' * padding}{text}"
@@ -247,6 +263,7 @@ class BatteryCLI:
     @staticmethod
     def _format_info_line(label: str, value: Any, color_code: str = "") -> str:
         """Format an information line with aligned columns"""
+
         # Width for label column (consistent width for alignment)
         label_width = 20
 
@@ -260,6 +277,7 @@ class BatteryCLI:
 
     def _display_battery_info(self) -> None:
         """Display battery information with color formatting and aligned columns"""
+
         info = self.battery_info
 
         # Display additional information if not in minimal mode
@@ -283,7 +301,6 @@ class BatteryCLI:
                     elif value == "False":
                         value = "No"
 
-
                 print(f"{self._format_info_line(label, value)}")
 
         # Bottom information line
@@ -305,7 +322,8 @@ class BatteryCLI:
     @staticmethod
     def _display_command_help() -> None:
         """Display available commands for interactive mode"""
-        commands = [
+
+        commands: list = [
             ("refresh (r)", "Refresh battery information"),
             ("save (s)", "Save battery report"),
             ("clear (c)", "Clear the screen"),
@@ -317,7 +335,7 @@ class BatteryCLI:
         print(f"\n{Colors.YELLOW}{Colors.BOLD}Available Commands:{Colors.END}")
 
         # Calculate maximum command length for alignment
-        max_cmd_len = max(len(cmd[0]) for cmd in commands)
+        max_cmd_len: int = max(len(cmd[0]) for cmd in commands)
 
         for cmd, desc in commands:
             print(f"  {Colors.GREEN}{cmd.ljust(max_cmd_len)}{Colors.END}  {desc}")
@@ -374,7 +392,6 @@ class BatteryCLI:
 
                     self._refresh_battery_info()
 
-
                 elif user_input in ('h', '?', 'help'):
 
                     # print out help
@@ -389,7 +406,6 @@ class BatteryCLI:
                     if len(user_input) > 1:
                         print(f"{Colors.RED}Unknown command: {user_input}\n"
                               f"{Colors.RED} try using '?' or 'help' {Colors.END}")
-
 
                     else:
                         print(f"{Colors.RED} Invalid input, use '?' or 'help' .")
@@ -409,10 +425,11 @@ class BatteryCLI:
                 break
 
     def _format_text_report(self) -> str:
-        """Format battery information as text report"""
-        info = self.battery_info
-        report = []
-        width = 60  # Width for the report box
+        """Format battery information as the text report"""
+
+        info: dict = self.battery_info
+        report: list = []
+        width: int = 60  # Width for the report box
 
         # Header
         report.append("=" * width)
@@ -439,7 +456,7 @@ class BatteryCLI:
 
         # Add all other information, sorted alphabetically
         sorted_keys: list = sorted([k for k in info.keys()
-                              if k not in ["level", "health", "is_charging", "time_remaining"]])
+                                    if k not in ["level", "health", "is_charging", "time_remaining"]])
 
         for key in sorted_keys:
             label = key.replace('_', ' ').title()
@@ -455,12 +472,13 @@ class BatteryCLI:
 
     def _save_reports(self) -> None:
         """Save battery information reports in specified formats"""
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        timestamp: str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
 
         # Create output directory if it doesn't exist
         os.makedirs(self.args.output_dir, exist_ok=True)
 
-        formats = []
+        formats: list = []
         if self.args.format in ["text", "both"]:
             formats.append("text")
         if self.args.format in ["json", "both"]:
@@ -477,12 +495,13 @@ class BatteryCLI:
 
             elif fmt == "json":
                 filepath = os.path.join(self.args.output_dir, f"battery_report_{timestamp}.json")
-                report_data = {
+                report_data: dict = {
                     "generated_by": f"{batterypy.caption} v{batterypy.version}",
                     "batterypy_version": batterypy.VERSION,
                     "timestamp": datetime.datetime.now().isoformat(),
                     "battery_info": self.battery_info
                 }
+
                 with open(filepath, "w") as f:
                     json.dump(report_data, f, indent=2)
                 saved_files.append(("JSON report", filepath))
@@ -507,8 +526,11 @@ def main() -> int:
         return 0
 
     except BatteryPyException:
-        print(f"\n\n  {Colors.YELLOW}{caption} Cannot run! Please retry again.{Colors.END}\n")
-        input("     Press Enter to exit.")
+
+        print(f"\n\n  {Colors.YELLOW}{batterypy.caption} ⚠️  No battery detected. Battery monitoring "
+              f"is unavailable on this device.{Colors.END}\n")
+
+        input("  Press Enter to exit.")
         return 1
 
 

@@ -28,10 +28,9 @@ from datetime import datetime
 from abc import ABC, abstractmethod
 
 
-
 # Declare software constants
 author: str = "Aymen Brahim Djelloul"
-version: str = "1.3"
+version: str = "1.1"
 caption: str = f"BatteryPy - v{version}"
 website: str = "https://aymenbrahimdjelloul.github.io/BatteryPy"
 
@@ -58,10 +57,10 @@ class BatteryPyException(BaseException):
 
 def _mw_to_w(value: int) -> int:
     """
-    Convert power from milli-watts to watts, rounded to the nearest integer.
+    Convert power from milliwatts to watts, rounded to the nearest integer.
 
     Parameters:
-        value (float): Power in milli-watts.
+        value (float): Power in milliwatts.
 
     Returns:
         int: Power in watts, rounded.
@@ -80,7 +79,6 @@ def _mw_to_w(value: int) -> int:
 #     return int(mwh / int(self.get_current_voltage(False)))
 
 
-
 def _get_datetime() -> str:
     """Get current datetime formatted as string
 
@@ -90,20 +88,20 @@ def _get_datetime() -> str:
     return datetime.now().strftime('%Y-%m-%d')
 
 
-def _is_battery(system_name: str) -> bool:
+def _is_battery() -> bool:
     """
     Detects if the system is running on battery power.
+
     Returns:
         bool: True if on battery, False if plugged in.
-              Exits on undetectable.
+
+    Raises:
+        BatteryPyException: If battery status cannot be determined or unsupported OS.
     """
-
     try:
-        if platform == system_name:
-
-            # Using _SYSTEM_POWER_STATUS struct from Windows API
+        if sys.platform == "win32":
             class _SYSTEM_POWER_STATUS(ctypes.Structure):
-                _fields_: list = [
+                _fields_ = [
                     ('ACLineStatus', ctypes.c_byte),
                     ('BatteryFlag', ctypes.c_byte),
                     ('BatteryLifePercent', ctypes.c_byte),
@@ -114,18 +112,16 @@ def _is_battery(system_name: str) -> bool:
 
             status = _SYSTEM_POWER_STATUS()
             if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
-                raise BatteryPyException("[ERROR] Unable to get power status from Windows API")
+                raise BatteryPyException("Unable to get power status from Windows API")
 
             if status.ACLineStatus == 0:
                 return True  # On battery
             elif status.ACLineStatus == 1:
                 return False
-
             else:
-                raise BatteryPyException("[ERROR] Battery status undetectable (Windows)")
+                raise BatteryPyException("Battery status undetectable (Windows)")
 
-        elif platform == system_name:
-            # Check common AC adapter sysfs files
+        elif sys.platform.startswith("linux"):
             ac_paths = [
                 "/sys/class/power_supply/AC/online",
                 "/sys/class/power_supply/AC0/online",
@@ -135,32 +131,28 @@ def _is_battery(system_name: str) -> bool:
 
             for path in ac_paths:
                 if os.path.exists(path):
-                    with open(path, "r") as f:
-                        status = f.read().strip()
-                        return status != "1"  # True if not online (battery)
+                    with open(path) as f:
+                        return f.read().strip() != "1"  # True if not online (on battery)
+            raise BatteryPyException("AC adapter status undetectable (Linux)")
 
-            raise BatteryPyException("[ERROR] AC adapter status undetectable (Linux)")
-
-        elif platform == system_name:  # macOS
-            output = subprocess.check_output(["pmset", "-g", "batt"], universal_newlines=True)
-            output = output.lower()
+        elif sys.platform == "darwin":
+            output = subprocess.check_output(["pmset", "-g", "batt"], universal_newlines=True).lower()
             if "discharging" in output:
                 return True
             elif "charging" in output or "charged" in output:
                 return False
-
-            raise BatteryPyException("[ERROR] Battery status undetectable (macOS)")
+            raise BatteryPyException("Battery status undetectable (macOS)")
 
         else:
-            raise BatteryPyException(f"[ERROR] Unsupported OS: {platform}")
+            raise BatteryPyException(f"Unsupported OS: {sys.platform}")
 
     except Exception as e:
-        raise BatteryPyException(e)
+        raise BatteryPyException(f"[ERROR] {e}")
 
 
 class _SYSTEM_BATTERY_STATE(Structure):
     """Windows SYSTEM_BATTERY_STATE structure for battery information."""
-    _fields_ = [
+    _fields_: list = [
         ("AcOnLine", c_bool),
         ("BatteryPresent", c_bool),
         ("Charging", c_bool),
@@ -189,7 +181,7 @@ class _BatteryPy(ABC):
         """Initialize the base battery class."""
         self._report_path: Optional[str] = None
 
-    # Abstract methods that must be implemented by subclasses
+    # Abstract methods that subclasses must implement
     @abstractmethod
     def battery_percent(self) -> int:
         """Get current battery charge percentage (0-100)."""
@@ -197,7 +189,7 @@ class _BatteryPy(ABC):
 
     @abstractmethod
     def is_plugged(self) -> bool:
-        """Check if device is connected to AC power."""
+        """Check if the device is connected to AC power."""
         pass
 
     @abstractmethod
@@ -297,68 +289,6 @@ class _BatteryPy(ABC):
 
         return data
 
-    # def get_summary(self) -> Dict[str, str]:
-    #     """Get a concise summary of key battery information.
-    #
-    #     Returns:
-    #         Dictionary with essential battery metrics
-    #     """
-    #     return {
-    #         'charge': f"{self.battery_percent()}%",
-    #         'health': f"{self.battery_health():.1f}%",
-    #         'status': 'Plugged In' if self.is_plugged() else 'On Battery',
-    #         'manufacturer': self.manufacturer or "Unknown",
-    #         'technology': self.battery_technology or "Unknown"
-    #     }
-
-    # def get_health_report(self) -> Dict[str, Any]:
-    #     """Get detailed battery health information.
-    #
-    #     Returns:
-    #         Dictionary with health-related metrics
-    #     """
-    #     health_percent = self.battery_health()
-    #     cycle_count = self.cycle_count
-    #
-    #     # Determine health status
-    #     if health_percent >= 80:
-    #         health_status = "Excellent"
-    #     elif health_percent >= 60:
-    #         health_status = "Good"
-    #     elif health_percent >= 40:
-    #         health_status = "Fair"
-    #     else:
-    #         health_status = "Poor"
-    #
-    #     return {
-    #         'health_percentage': health_percent,
-    #         'health_status': health_status,
-    #         'cycle_count': cycle_count,
-    #         'manufacturer': self.manufacturer or "Unknown",
-    #         'chemistry': self.battery_technology or "Unknown",
-    #         'estimated_degradation': round(100 - health_percent, 1)
-    #     }
-
-    # def get_power_info(self) -> Dict[str, Any]:
-    #     """Get current power and charging information.
-    #
-    #     Returns:
-    #         Dictionary with power-related metrics
-    #     """
-    #     charge_rate_val = self.charge_rate()
-    #     is_charging = charge_rate_val > 0 if charge_rate_val != 0 else False
-    #
-    #     return {
-    #         'battery_percentage': self.battery_percent(),
-    #         'is_plugged': self.is_plugged(),
-    #         'is_charging': is_charging,
-    #         'is_discharging': charge_rate_val < 0,
-    #         'charge_rate_mw': abs(charge_rate_val),
-    #         'charge_direction': 'Charging' if is_charging else 'Discharging' if charge_rate_val < 0 else 'Idle',
-    #         'is_fast_charging': self.is_fast_charge(),
-    #         'remaining_capacity_mwh': self.remaining_capacity()
-    #     }
-
     @staticmethod
     def _format_percentage(percentage: int) -> str:
         """Format battery percentage with appropriate handling."""
@@ -403,13 +333,13 @@ class _BatteryPy(ABC):
         return "Unknown"
 
     def is_battery_critical(self, threshold: int = 10) -> bool:
-        """Check if battery level is critically low.
+        """Check if the battery level is critically low.
 
         Args:
             threshold: Percentage threshold for critical battery level
 
         Returns:
-            True if battery is below threshold and not plugged in
+            True if battery is below the threshold and not plugged in
         """
         percentage = self.battery_percent()
         return (percentage is not None and
@@ -459,13 +389,14 @@ class _BatteryPy(ABC):
 
     # Backward compatibility methods
     def get_formatted_result(self) -> Dict[str, str]:
-        """Get formatted result for backward compatibility.
+        """Get the formatted result for backward compatibility.
 
         Returns:
             Dictionary with formatted string values (deprecated, use get_result)
         """
         return {k: v for k, v in self.get_result().items()
                 if not isinstance(v, dict)}  # Exclude raw_data if present
+
 
 # Initialize BatteryPy
 if platform == "Windows":
@@ -500,7 +431,7 @@ if platform == "Windows":
         """
 
         # Class constants
-        _FAST_CHARGE_THRESHOLD_MW = 15000  # 15W threshold for fast charging
+        _FAST_CHARGE_THRESHOLD_MW = 15000  # 15 W threshold for fast charging
         _CACHE_DURATION_SECONDS = 2  # Cache API calls for 2 seconds
         _POWER_INFO_BATTERY_STATE = 5  # Windows API constant
 
@@ -518,12 +449,18 @@ if platform == "Windows":
             """
             super().__init__()
 
+            # Check if Battery exists
+            if not _is_battery():
+                # in case of no battery presenceRaise BatteryPyException
+                raise BatteryPyException(
+                    "Battery not detected: BatteryPy could not find any battery device on this system.")
+
             self.dev_mode = dev_mode
             self._last_api_call = 0
             self._cached_state = None
 
             # Initialize battery report (static information)
-            self._battery_report = _BatteryHtmlReport()
+            self._battery_report = _BatteryHtmlReport(dev_mode=self.dev_mode)
 
             # Load Windows DLLs with error handling
             try:
@@ -620,7 +557,7 @@ if platform == "Windows":
                 return 0
 
         def is_plugged(self) -> bool:
-            """Check if device is connected to AC power.
+            """Check if the device is connected to AC power.
 
             Returns:
                 True if plugged in, False if on battery power
@@ -629,7 +566,7 @@ if platform == "Windows":
             return bool(state.AcOnLine) if state else False
 
         def remaining_capacity(self) -> int:
-            """Get remaining battery capacity in mWh.
+            """Get the remaining battery capacity in mWh.
 
             Returns:
                 Integer capacity in mWh, returns 0 if unavailable
@@ -640,7 +577,7 @@ if platform == "Windows":
             return state.RemainingCapacity
 
         def charge_rate(self) -> int:
-            """Get current charge/discharge rate in mW.
+            """Get the current charge/discharge rate in mW.
 
             Returns:
                 Integer rate in mW (positive when charging, negative when discharging)
@@ -667,7 +604,7 @@ if platform == "Windows":
                 return 0
 
         def is_charging(self) -> bool:
-            """Check if battery is currently charging.
+            """Check if the battery is currently charging.
 
             Returns:
                 True if charging, False otherwise
@@ -688,7 +625,7 @@ if platform == "Windows":
             """Check if battery is fast charging.
 
             Returns:
-                True if charging rate exceeds fast charge threshold
+                True if the charging rate exceeds the fast charge threshold
             """
             if not self.is_charging():
                 return False
@@ -964,7 +901,7 @@ if platform == "Windows":
 
                     # Multiply by typical cell count for laptops
                     if chemistry in [6, 8]:  # Li-ion/Li-Po
-                        voltage = voltage * 3  # Most laptops use 3-cell config (11.1V)
+                        voltage = voltage * 3  # Most laptops use 3-cell config (11.1 V)
 
                     if self.dev_mode:
                         print(f"[WinBattery] Estimated voltage (chemistry {chemistry}): {voltage:.1f}V")
@@ -1000,7 +937,7 @@ if platform == "Windows":
                                         creationflags=subprocess.CREATE_NO_WINDOW)
 
                 if result.returncode == 0 and result.stdout.strip():
-                    # Temperature in WMI is typically in tenths of Kelvin
+                    # The Temperature in WMI is typically in tenths of Kelvin
                     temp_raw = float(result.stdout.strip())
                     if temp_raw > 1000:  # Likely in tenths of Kelvin
                         temp_celsius = (temp_raw / 10.0) - 273.15
@@ -1080,11 +1017,11 @@ if platform == "Windows":
                     for line in lines:
                         if line.strip():
                             try:
-                                # Temperature is in tenths of Kelvin
+                                # The Temperature is in tenths of Kelvin
                                 temp_raw = float(line.strip())
                                 temp_celsius = (temp_raw / 10.0) - 273.15
 
-                                # Look for reasonable battery temperature (usually 20-50°C)
+                                # Look for a reasonable battery temperature (usually 20-50°C)
                                 if 15 <= temp_celsius <= 80:
                                     if self.dev_mode:
                                         print(f"[WinBattery] Thermal zone temp: {temp_celsius:.1f}°C")
@@ -1177,7 +1114,7 @@ if platform == "Windows":
                 return None
 
             try:
-                # Check values in current key
+                # Check values in the current key
                 i = 0
                 while True:
                     try:
@@ -1298,7 +1235,7 @@ if platform == "Windows":
 
         This class uses the Windows 'powercfg /batteryreport' command to generate a detailed battery
         health and status report in HTML format. The report is automatically cached to avoid redundant
-        command executions and file reads. It provides methods to extract key information such as
+        command executions and the file reads. It provides methods to extract key information such as
         manufacturer, chemistry, design capacity, full charge capacity, and cycle count.
 
         Features:
@@ -1343,8 +1280,11 @@ if platform == "Windows":
             'cycle_count': re.compile(r'CYCLE COUNT</span>\s*</td>\s*<td[^>]*>(.*?)</td>', re.IGNORECASE | re.DOTALL)
         }
 
-        def __init__(self, force_refresh: bool = False):
+        def __init__(self, force_refresh: bool = False, dev_mode: bool = False) -> None:
             """Initialize the battery report with optional cache refresh."""
+
+            # Declare class constants
+            self.dev_mode = dev_mode
             self._report_data: Optional[str] = None
             self._initialize_report(force_refresh)
 
@@ -1354,30 +1294,40 @@ if platform == "Windows":
                 if not force_refresh and self._cache_exists():
                     self._report_data = self._load_cache()
 
-                # Generate new report if no cache or cache load failed
+                # Generate the new report if no cache or cache load failed
                 if not self._report_data:
                     self._report_data = self._generate_battery_report()
                     if self._report_data:
                         self._save_cache(self._report_data)
 
             except Exception as e:
-                print(f"[BatteryHtmlReport] Error initializing: {e}")
+
+                # Print exception in dev mode
+                if self.dev_mode:
+                    print(f"[BatteryHtmlReport] Error initializing: {e}")
+
                 self._report_data = None
 
         def _cache_exists(self) -> bool:
-            """Check if cache file exists and is readable."""
+            """Check if the cache file exists and is readable."""
             return self._CACHE_REPORT_PATH.exists() and self._CACHE_REPORT_PATH.is_file()
 
         def _load_cache(self) -> Optional[str]:
             """Load and return cached HTML report data."""
+
             try:
                 return self._CACHE_REPORT_PATH.read_text(encoding="utf-8")
+
             except Exception as e:
-                print(f"[BatteryHtmlReport] Error loading cache: {e}")
+
+                # Print exception in dev mode
+                if self.dev_mode:
+                    print(f"[BatteryHtmlReport] Error loading cache: {e}")
+
                 return None
 
         def _save_cache(self, data: str) -> None:
-            """Save HTML report data to cache file."""
+            """Save HTML report data to a cache file."""
             try:
                 # Ensure cache directory exists
                 self._CACHE_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -1386,7 +1336,7 @@ if platform == "Windows":
                 print(f"[BatteryHtmlReport] Error saving cache: {e}")
 
         def _generate_battery_report(self) -> Optional[str]:
-            """Generate battery report using powercfg and return HTML content."""
+            """Generate a battery report using powercfg and return HTML content."""
             try:
                 # Run powercfg command with timeout
                 result = subprocess.run(
@@ -1397,44 +1347,53 @@ if platform == "Windows":
                     timeout=self._COMMAND_TIMEOUT
                 )
 
-                # Extract report file path
+                # Extract the report file path
                 if match := re.search(r'saved to\s+file path\s+(.+)', result.stdout, re.IGNORECASE):
                     report_path = Path(match.group(1).strip().strip('"'))
                 else:
-                    print("[BatteryHtmlReport] ❗ Report path not found in output.")
+                    # Print exception in dev mode
+                    if self.dev_mode:
+                        print("[BatteryHtmlReport] ❗ Report path not found in output.")
+
                     return None
 
                 # Validate file exists
                 if not report_path.is_file():
-                    print(f"[BatteryHtmlReport] ❗ Report file not found at: {report_path}")
+
+                    # Print exception in dev mode
+                    if self.dev_mode:
+                        print(f"[BatteryHtmlReport] ❗ Report file not found at: {report_path}")
+
                     return None
 
                 # Read and clean up file
                 try:
                     return report_path.read_text(encoding="utf-8")
                 except (OSError, IOError) as file_err:
-                    print(f"[BatteryHtmlReport] ❗ Error reading report: {file_err}")
+
+                    # Print exception in dev mode
+                    if self.dev_mode:
+                        print(f"[BatteryHtmlReport] ❗ Error reading report: {file_err}")
+
                     return None
                 finally:
-                    # Clean up temporary report file
+                    # Cleanup temporary report file
                     try:
                         report_path.unlink(missing_ok=True)
                     except Exception as cleanup_err:
                         print(f"[BatteryHtmlReport] ⚠️ Failed to delete report file: {cleanup_err}")
 
-            except subprocess.TimeoutExpired:
-                print("[BatteryHtmlReport] ❗ Command timed out")
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, Exception) as err:
 
-            except subprocess.CalledProcessError as e:
-                print(f"[BatteryHtmlReport] ❗ Failed to generate report: {e}")
-
-            except Exception as e:
-                print(f"[BatteryHtmlReport] ❗ Unexpected error: {e}")
+                # Print exception in dev mode
+                if self.dev_mode:
+                    print(f"[BatteryHtmlReport] ERROR : {err}")
 
             return None
 
         def _parse_html(self, query: str, as_int: bool = False) -> Union[str, int]:
             """Parse HTML report data for specific battery information."""
+
             if not self._report_data:
                 return 0 if as_int else "Unknown"
 
@@ -1456,6 +1415,7 @@ if platform == "Windows":
         @lru_cache(maxsize=128)
         def _normalize_text(html_text: str) -> str:
             """Clean HTML text by removing tags and normalizing whitespace."""
+
             # Remove HTML tags
             text = re.sub(r'<[^>]*>', '', html_text)
             # Decode HTML entities
@@ -1466,9 +1426,10 @@ if platform == "Windows":
         @staticmethod
         def _extract_numeric_value(text: str) -> int:
             """Extract numeric value from text, handling various formats."""
+
             # Remove non-digit characters except commas and periods
             digits_only = re.sub(r'[^\d,.]', '', text)
-            # Remove commas (thousand separators)
+            # Remove commas (a thousand separators)
             digits_only = digits_only.replace(',', '')
             # Handle decimal points by taking integer part
             if '.' in digits_only:
@@ -1481,11 +1442,11 @@ if platform == "Windows":
 
         # Public interface methods
         def battery_manufacturer(self) -> str:
-            """Get battery manufacturer."""
+            """Get the battery manufacturer."""
             return self._parse_html("manufacturer")
 
         def battery_chemistry(self) -> str:
-            """Get battery chemistry type."""
+            """Get the battery chemistry type."""
             return self._parse_html("chemistry")
 
         def battery_design_capacity(self) -> int:
@@ -1505,7 +1466,7 @@ if platform == "Windows":
             return self._report_data is not None
 
         def get_battery_health_percentage(self) -> float:
-            """Calculate battery health as percentage of design vs full capacity."""
+            """Calculate battery health as percentage of design vs. full capacity."""
             design = self.battery_design_capacity()
             full = self.battery_full_capacity()
 
@@ -1514,7 +1475,7 @@ if platform == "Windows":
             return 0.0
 
         def battery_technology(self) -> str:
-            """ This method get the battery chemistry string"""
+            """ This method gets the battery chemistry string"""
             return self._parse_html("chemistry")
 
 
@@ -1553,7 +1514,7 @@ elif platform == "Linux":
             """ This method will check if the device is plugged into AC power
 
             Returns:
-                True if plugged in , False if on battery, None on error
+                True if plugged in, False if on battery, None on error
             """
 
         def remaining_capacity(self) -> Optional[int]:
@@ -1571,7 +1532,7 @@ elif platform == "Linux":
             """ This method will check if the battery is Fast charging
 
             Return:
-                True if charge fast , False if charge slow, None if the device not charging or error
+                True if charge fast, False if charges slow, None if the device not charging or error
 
             """
 
