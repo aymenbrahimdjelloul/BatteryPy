@@ -5,8 +5,8 @@ This code or file is part of 'BatteryPy' project
 copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
-    // BatteryPy - A sophisticated CLI tool for monitoring and reporting battery information
-    // This tool uses BatteryPy to collect battery data and displays it with rich color formatting.
+    // BatteryPy - A sophisticated tool and pure python library for monitoring and reporting battery information
+    // This code uses BatteryPy to collect battery data and displays it with rich color formatting.
     // It features interactive commands, beautifully aligned output, and options to save reports.
 
 """
@@ -18,24 +18,26 @@ import sys
 import json
 import shutil
 import argparse
-import colorama
 import batterypy
 import datetime
 from time import sleep
 from typing import Any
-from ._core import _Const as const
-from batterypy._exceptions import _BatteryNotDetected
+from batterypy import BatteryPyException, caption
 
 # Handling coloring
 try:
 
     # use colorama for best coloring
-    from colorama import Fore, Style
+    from colorama import Fore, Style, init
+
+    # Initialize colorama
+    init(autoreset=True)
 
     class Colors:
         """
         A utility class that defines CLI coloring using 'colorama'
         """
+
         UNDERLINE = Style.BRIGHT
         YELLOW = Fore.YELLOW
         GREEN = Fore.GREEN
@@ -55,6 +57,7 @@ except ImportError:
         """
         A utility class that defines ANSI escape sequences for styling terminal text output.
         """
+
         BLUE = "\033[94m"
         CYAN = "\033[96m"
         GREEN = "\033[92m"
@@ -68,11 +71,7 @@ except ImportError:
 class BatteryCLI:
     """Interactive CLI tool for displaying and saving battery information"""
 
-    def __init__(self):
-
-        # Initialize colorama if exists
-        if colorama:
-            colorama.init()
+    def __init__(self) -> None:
 
         # Create BatteryPy object class
         self.battery = batterypy.Battery()
@@ -100,7 +99,7 @@ class BatteryCLI:
     def _parse_arguments() -> argparse.Namespace:
         """Parse command line arguments"""
         parser = argparse.ArgumentParser(
-            description=f"{const.app_caption} - Battery Information Monitoring Tool",
+            description=f"{caption} - Battery Information Monitoring Tool",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         )
 
@@ -190,8 +189,8 @@ class BatteryCLI:
         """ This method will set title for terminal window"""
 
         try:
-            os.system(f"title {const.app_caption}" if batterypy.__CURRENT_PLATFORM == "Windows" else
-                      f'echo -ne "\033]0;{const.app_caption}\007"')
+            os.system(f"title {batterypy.caption}" if batterypy.platform == "Windows" else
+                      f'echo -ne "\033]0;{batterypy.caption}\007"')
         except OSError:
             return None
 
@@ -233,18 +232,17 @@ class BatteryCLI:
 
         print(f""
               f"\n{Colors.BOLD}{Colors.CYAN}"
-              f"{self._center_text(f'{const.app_caption} - Developed by {const.author}')}\n"
-              f"{self._center_text(f'visit : {const.app_website}')}\n")
+              f"{self._center_text(f'{caption} - Developed by {batterypy.author}')}\n"
+              f"{self._center_text(f'visit : {batterypy.website}')}\n")
 
         print(f"{Colors.BLUE}{Colors.BOLD}{'─' * self.terminal_width}{Colors.END}\n")
 
     @staticmethod
     def _display_version() -> None:
         """Display detailed version information"""
-        print(f"\n{Colors.BOLD}Application  :{Colors.END}    {Colors.CYAN}{APP_CAPTION} v{const.version}{Colors.END}")
-        print(f"{Colors.BOLD}Developed by   :{Colors.END}    {AUTHOR}")
-        print(f"{Colors.BOLD}Website        :{Colors.END}    {APP_WEBSITE}")
-        print(f"{Colors.BOLD}Timestamp      :{Colors.END}    {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"\n {Colors.BOLD}Application    : {Colors.END}    {Colors.CYAN}{batterypy.caption}{Colors.END}")
+        print(f" {Colors.BOLD}Developed by   : {Colors.END}    {batterypy.author}")
+        print(f" {Colors.BOLD}Website        : {Colors.END}    {batterypy.website}")
 
     @staticmethod
     def _format_info_line(label: str, value: Any, color_code: str = "") -> str:
@@ -273,8 +271,20 @@ class BatteryCLI:
                                   if k not in ["level", "health", "is_charging", "time_remaining"]])
 
             for key in sorted_keys:
-                label = key.replace('_', ' ').title()
-                print(f"{self._format_info_line(label, info[key])}")
+
+                label: str = key.replace('_', ' ').title()
+                value: str = info[key]
+
+                if value is bool:
+                    print("work")
+                    # Check for booleans
+                    if value == "True":
+                        value = "Yes"
+                    elif value == "False":
+                        value = "No"
+
+
+                print(f"{self._format_info_line(label, value)}")
 
         # Bottom information line
         print(f"\n{Colors.BLUE}{Colors.BOLD}{'─' * self.terminal_width}{Colors.END}")
@@ -338,7 +348,7 @@ class BatteryCLI:
                 # Handle single-key commands first
                 if user_input in ("q", "quit", "exit", "bye"):
                     self.running = False
-                    print(f"{Colors.YELLOW}Exiting {APP_CAPTION}...{Colors.END}")
+                    print(f"{Colors.YELLOW}Exiting {batterypy.caption}...{Colors.END}")
 
                     # wait
                     sleep(2)
@@ -406,7 +416,7 @@ class BatteryCLI:
 
         # Header
         report.append("=" * width)
-        report.append(f"{APP_CAPTION} - Battery Report".center(width))
+        report.append(f"{batterypy.caption} - Battery Report".center(width))
         report.append("-" * width)
         report.append(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         report.append("=" * width)
@@ -428,7 +438,7 @@ class BatteryCLI:
         report.append("-" * width)
 
         # Add all other information, sorted alphabetically
-        sorted_keys = sorted([k for k in info.keys()
+        sorted_keys: list = sorted([k for k in info.keys()
                               if k not in ["level", "health", "is_charging", "time_remaining"]])
 
         for key in sorted_keys:
@@ -438,8 +448,8 @@ class BatteryCLI:
         # Footer
         report.append("")
         report.append("=" * width)
-        report.append(f"Report by {APP_CAPTION}".center(width))
-        report.append(f"{APP_WEBSITE}".center(width))
+        report.append(f"Report by {batterypy.caption}".center(width))
+        report.append(f"{batterypy.website}".center(width))
 
         return "\n".join(report)
 
@@ -456,7 +466,7 @@ class BatteryCLI:
         if self.args.format in ["json", "both"]:
             formats.append("json")
 
-        saved_files = []
+        saved_files: list = []
 
         for fmt in formats:
             if fmt == "text":
@@ -468,7 +478,7 @@ class BatteryCLI:
             elif fmt == "json":
                 filepath = os.path.join(self.args.output_dir, f"battery_report_{timestamp}.json")
                 report_data = {
-                    "generated_by": f"{APP_CAPTION} v{VERSION}",
+                    "generated_by": f"{batterypy.caption} v{batterypy.version}",
                     "batterypy_version": batterypy.VERSION,
                     "timestamp": datetime.datetime.now().isoformat(),
                     "battery_info": self.battery_info
@@ -496,8 +506,8 @@ def main() -> int:
         print(f"\n{Colors.YELLOW}Battery information gathering interrupted.{Colors.END}")
         return 0
 
-    except _BatteryNotDetected:
-        print(f"\n\n  {Colors.YELLOW}{APP_CAPTION} Cannot run! Please retry again.{Colors.END}\n")
+    except BatteryPyException:
+        print(f"\n\n  {Colors.YELLOW}{caption} Cannot run! Please retry again.{Colors.END}\n")
         input("     Press Enter to exit.")
         return 1
 

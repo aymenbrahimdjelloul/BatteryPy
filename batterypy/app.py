@@ -1,318 +1,744 @@
+"""
+This code or file is part of 'BatteryPy' project
+copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
+use of this source code is governed by MIT License that can be found on the project folder.
 
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-import platform
-import time
+@author : Aymen Brahim Djelloul
+version : 0.1
+date : 06.04.2025
+license : MIT License
+
+
+"""
+
+# IMPORTS
 import json
-from datetime import datetime
+import threading
+import webbrowser
+import platform
+import tkinter as tk
+from pathlib import Path
+from tkinter import ttk, messagebox, filedialog, PhotoImage, font
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any
 
 
-class BatteryMonitor:
-    def __init__(self, root):
+try:
+    import batterypy
+    import requests
+    miss_dependencies: bool = False
+
+except ImportError:
+    miss_dependencies: bool = True
+
+
+class BatteryPyInterface:
+    """
+    This class contains the graphical user interface for the BatteryPy application.
+    """
+
+    def __init__(self, root) -> None:
+
+        # Create root
         self.root = root
-        self.root.title("Battery Monitor v1.0")
-        self.root.geometry("450x500")
+
+        # Set window title and size
+        self.root.title(batterypy.caption)
         self.root.resizable(False, False)
 
-        # App info
-        self.version = "1.0"
-        self.author = "Battery Monitor Developer"
-        self.license = "MIT License"
-        self.website = "https://github.com/batterymonitor"
+        # Center the window on the screen
+        window_width: int = 400
+        window_height: int = 500
+        x: int = (self.root.winfo_screenwidth() // 2) - (window_width // 2)
+        y: int = (self.root.winfo_screenheight() // 2) - (window_height // 2)
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
-        self.setup_ui()
-        self.update_display()
-
-    def setup_ui(self):
-        # Main frame
-        main_frame = ttk.Frame(self.root, padding="15")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Title
-        title_label = ttk.Label(main_frame, text="Battery Monitor",
-                                font=("Segoe UI", 18, "bold"))
-        title_label.pack(pady=(0, 15))
-
-        # Battery Level Section
-        level_frame = ttk.LabelFrame(main_frame, text="Battery Level", padding="15")
-        level_frame.pack(fill=tk.X, pady=5)
-
-        # Battery level display (no progress bar)
-        self.level_label = ttk.Label(level_frame, text="0%", font=("Segoe UI", 24, "bold"))
-        self.level_label.pack(pady=10)
-
-        # Battery Info Section
-        info_frame = ttk.LabelFrame(main_frame, text="Battery Information", padding="10")
-        info_frame.pack(fill=tk.X, pady=5)
-
-        # Create info display using grid
-        info_container = ttk.Frame(info_frame)
-        info_container.pack(fill=tk.X)
-
-        self.info_labels = {}
-        info_items = [
-            ("Status:", "status"),
-            ("Health:", "health"),
-            ("Technology:", "technology"),
-            ("Temperature:", "temperature"),
-            ("Voltage:", "voltage"),
-            ("Current:", "current"),
-            ("Power:", "power"),
-            ("Cycle Count:", "cycle_count"),
-            ("Fast Charging:", "fast_charge"),
-            ("Time Remaining:", "time_remaining")
-        ]
-
-        for i, (label_text, key) in enumerate(info_items):
-            label = ttk.Label(info_container, text=label_text, font=("Arial", 9, "bold"))
-            label.grid(row=i, column=0, sticky=tk.W, pady=2, padx=(0, 15))
-
-            value_label = ttk.Label(info_container, text="N/A", font=("Arial", 9))
-            value_label.grid(row=i, column=1, sticky=tk.W, pady=2)
-
-            self.info_labels[key] = value_label
-
-        # Control buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=15)
-
-        self.refresh_btn = ttk.Button(button_frame, text="Refresh",
-                                      command=self.update_display)
-        self.refresh_btn.pack(side=tk.LEFT, padx=5)
-
-        self.save_btn = ttk.Button(button_frame, text="Save Report",
-                                   command=self.save_report)
-        self.save_btn.pack(side=tk.LEFT, padx=5)
-
-        self.about_btn = ttk.Button(button_frame, text="About",
-                                    command=self.show_about)
-        self.about_btn.pack(side=tk.LEFT, padx=5)
-
-        # Status bar
-        self.status_var = tk.StringVar(value="Ready")
-        status_bar = ttk.Label(main_frame, textvariable=self.status_var,
-                               relief=tk.SUNKEN, anchor=tk.W)
-        status_bar.pack(fill=tk.X, pady=(10, 0))
-
-    def get_battery_info(self):
-        """Get comprehensive battery information"""
+        # Load the application icon (PNG format recommended for cross-platform)
         try:
-            battery = psutil.sensors_battery()
-            if battery is None:
-                return {"error": "No battery found or battery information not available"}
+            self.icon = PhotoImage(file="../images/icon.png")  # Store as attribute if used in other windows
+            self.root.iconphoto(True, self.icon)
+        except tk.TclError as e:
+            print(f"Warning: Unable to load icon: {e}")
 
-            info = {
-                "percent": battery.percent,
-                "plugged": battery.power_plugged,
-                "time_left": battery.secsleft if battery.secsleft != psutil.POWER_TIME_UNLIMITED else None
-            }
+        # Configure enhanced font for messagebox
+        default_font = font.nametofont("TkDefaultFont")
 
-            # Determine charging status
-            if battery.power_plugged:
-                if battery.percent < 100:
-                    info["status"] = "Charging"
-                else:
-                    info["status"] = "Fully Charged"
-            else:
-                info["status"] = "Discharging"
+        default_font.configure(size=12, family="Segoe UI")
 
-            # Try to get additional battery information
-            try:
-                if platform.system() == "Windows":
-                    info["technology"] = "Li-ion (estimated)"
-                    info["health"] = "Good (estimated)"
-                else:
-                    info["technology"] = "Unknown"
-                    info["health"] = "Unknown"
-            except:
-                info["technology"] = "Unknown"
-                info["health"] = "Unknown"
+        caption_font = font.nametofont("TkCaptionFont")
+        caption_font.configure(size=14, weight="bold", family="Segoe UI")
 
-            # Set default values for unavailable info
-            info["temperature"] = "N/A"
-            info["voltage"] = "N/A"
-            info["current"] = "N/A"
-            info["power"] = "N/A"
-            info["cycle_count"] = "N/A"
-            info["fast_charge"] = "N/A"
+        if miss_dependencies:
+            messagebox.showerror(
+                "Missing Libraries",
+                "One or more required components are missing.\n\n"
+                "This application cannot start without the necessary libraries.\n"
+                "Please ensure all dependencies are properly installed and try again."
+            )
 
-            return info
-
-        except Exception as e:
-            return {"error": f"Error getting battery info: {str(e)}"}
-
-    def update_display(self):
-        """Update the GUI with current battery information"""
-        battery_info = self.get_battery_info()
-
-        if "error" in battery_info:
-            self.status_var.set(battery_info["error"])
-            messagebox.showerror("Error", battery_info["error"])
+            self.root.destroy()  # close the app after showing the error
             return
 
-        # Update progress bar and percentage
-        percent = battery_info.get("percent", 0)
-        self.battery_progress["value"] = percent
-        self.level_label.config(text=f"{percent}%")
+        # Create Updater object
+        updater = Updater()
 
-        # Update info labels
-        self.info_labels["status"].config(text=battery_info.get("status", "Unknown"))
-        self.info_labels["health"].config(text=battery_info.get("health", "Unknown"))
-        self.info_labels["technology"].config(text=battery_info.get("technology", "Unknown"))
-        self.info_labels["temperature"].config(text=battery_info.get("temperature", "N/A"))
-        self.info_labels["voltage"].config(text=battery_info.get("voltage", "N/A"))
-        self.info_labels["current"].config(text=battery_info.get("current", "N/A"))
-        self.info_labels["power"].config(text=battery_info.get("power", "N/A"))
-        self.info_labels["cycle_count"].config(text=battery_info.get("cycle_count", "N/A"))
-        self.info_labels["fast_charge"].config(text=battery_info.get("fast_charge", "N/A"))
+        if updater.is_update():
+            # Get detailed update information
+            update_info = updater.get_update_info()
 
-        # Format time remaining
-        time_left = battery_info.get("time_left")
-        if time_left is not None and time_left > 0:
-            hours, remainder = divmod(time_left, 3600)
-            minutes = remainder // 60
-            time_str = f"{int(hours)}h {int(minutes)}m"
-        else:
-            time_str = "N/A" if not battery_info.get("plugged") else "Charging"
+            # Create a temporary root window to configure default font
+            temp_root = tk.Tk()
+            temp_root.withdraw()  # Hide the window
 
-        self.info_labels["time_remaining"].config(text=time_str)
 
-        # Update status
-        self.status_var.set(f"Last updated: {time.strftime('%H:%M:%S')}")
+            # Build message with available information
+            if update_info:
+                new_version = update_info.get('version', 'Unknown')
+                download_size = update_info.get('download_size_mb', 0)
 
-    def save_report(self):
-        """Save battery report to file"""
+                message = (
+                    f"🔄 A new version of BatteryPy is available!\n\n"
+                    f"📦 Latest version: {new_version}\n"
+                    f"💾 Download size: {download_size} MB\n\n"
+                    f"Would you like to download and install it?"
+                )
+                download_url = update_info.get('download_url', '')
+            else:
+                # Fallback message when update_info is unavailable
+                message = (
+                    "🔄 A new version of BatteryPy is available!\n\n"
+                    "Would you like to download and install it?"
+                )
+                download_url = ''
+
+            # Show update dialog with custom options
+            response = messagebox.askyesnocancel(
+                "⚡ BatteryPy Update Available",
+                message,
+                icon='question'
+            )
+
+            # Clean up temporary root
+            temp_root.destroy()
+
+            # Handle user response
+            if response is True:  # Yes - Install
+                target_url = download_url or f"{batterypy.website}#downloads"
+                webbrowser.open_new(target_url)
+            elif response is False:  # No - Remind later
+                # Optional: Set reminder for later
+                pass
+
+        # Declare battery data
+        self.battery_data: dict = {}
+        # Create Battery object
+        self.battery = batterypy.Battery()
+
+        # Initialize the user interface
+        self.create_ui()
+
+    def create_ui(self) -> None:
+        """Initial UI setup with a loading message. Data is populated later via threading."""
+
+        self.frame = ttk.Frame(self.root, padding=10)
+        self.frame.pack(fill=tk.BOTH, expand=True)
+
+        self.title_label = ttk.Label(
+            self.frame,
+            text="BatteryPy - Check Your Battery",
+            font=("Segoe UI", 14, "bold")
+        )
+        self.title_label.pack(pady=(0, 10))
+
+        self.info_frame = ttk.LabelFrame(self.frame, text="Battery Information", padding=15)
+        self.info_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+
+        self.status_label = ttk.Label(
+            self.info_frame,
+            text="Please wait...",
+            font=("Segoe UI", 11, "italic"),
+            foreground="grey"
+        )
+        self.status_label.pack(pady=30)
+
+        # Action buttons (disabled initially)
+        self.button_frame = ttk.Frame(self.frame)
+        self.button_frame.pack(pady=5)
+
+        self.save_button = ttk.Button(
+            self.button_frame, text="Save Report", command=self.save_report, state=tk.DISABLED
+        )
+        self.save_button.pack(side=tk.LEFT, padx=10)
+
+        self.about_button = ttk.Button(
+            self.button_frame, text="About", command=self.show_about
+        )
+        self.about_button.pack(side=tk.LEFT, padx=10)
+
+        # Start thread to load battery data
+        threading.Thread(target=self._load_battery_data, daemon=True).start()
+
+    def _load_battery_data(self) -> None:
+        """Threaded method to get battery data and update UI on completion."""
+        self.battery_data = self.battery.get_result()
+        self.root.after(0, self._display_battery_info, self.battery_data)
+
+    def _display_battery_info(self, data: Optional[dict]) -> None:
+        """Update UI once battery data is available."""
+
+        # Clear status message if exists
+        if hasattr(self, "status_label"):
+            self.status_label.destroy()
+
+        if not data:
+            ttk.Label(
+                self.info_frame,
+                text="BatteryPy Unable to retrieve data.",
+                foreground="red",
+                font=("Segoe UI", 12, "italic")
+
+            ).pack(pady=30)
+            return
+
+        self.battery_data = data
+        self.info_vars: dict[str, tk.StringVar] = {}
+        self.info_labels: dict[str, ttk.Label] = {}  # Store labels for coloring
+
+        for i, (key, value) in enumerate(data.items()):
+            label_text = key.replace("_", " ").title()
+
+            ttk.Label(self.info_frame, text=f"{label_text}  :", font=("Segoe UI", 10, "bold")).grid(
+                row=i, column=0, sticky=tk.W, padx=(0, 10), pady=3
+            )
+
+            var = tk.StringVar(value=str(value))
+            self.info_vars[key] = var
+
+            value_label = ttk.Label(self.info_frame, textvariable=var, font=("Segoe UI", 10))
+            value_label.grid(row=i, column=1, sticky=tk.W, pady=3)
+            self.info_labels[key] = value_label  # Save label for updates
+
+        # Enable buttons
+        self.save_button.config(state=tk.NORMAL)
+
+        # Start the periodic update loop with threading
+        self._start_update_thread()
+
+    def _start_update_thread(self):
+        """Start a background thread to update battery data every 2 seconds."""
+
+        def worker():
+            while True:
+                updated_data: dict = {
+                    "Power Status": "Plugged in" if self.battery.is_plugged() else "On Battery",
+                    "Battery percentage": self.battery.battery_percent(),
+                    "Battery Voltage": self.battery.battery_voltage(),
+                    "Battery Temperature": self.battery.battery_temperature()
+                }
+
+                print(updated_data)
+                # Schedule GUI update in main thread
+                self.root.after(0, self._update, updated_data)
+                threading.Event().wait(1)  # Sleep for 2 seconds
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update(self, updated_data: dict):
+        """Update labels and color according to new values in the main thread."""
+        for key, new_value in updated_data.items():
+            if key in self.info_vars:
+                old_value = self.info_vars[key].get()
+                self.info_vars[key].set(str(new_value))
+
+                label = self.info_labels.get(key)
+                if label is not None:
+                    try:
+                        old_val_float = float(old_value)
+                        new_val_float = float(new_value)
+                    except Exception:
+                        old_val_float = None
+                        new_val_float = None
+
+                    if old_val_float is not None and new_val_float is not None:
+                        if new_val_float > old_val_float:
+                            label.config(foreground="green")
+                        elif new_val_float < old_val_float:
+                            label.config(foreground="red")
+                        else:
+                            label.config(foreground="black")
+                    else:
+                        label.config(foreground="black")
+
+    def save_report(self) -> None:
+        """Save battery report with system info"""
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        default_name = f"battery_report_{platform.system().lower()}_{timestamp}"
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("JSON files", "*.json")],
+            initialfile=default_name,
+            title="Save Battery Report"
+        )
+
+        if not file_path:
+            return
+
         try:
-            battery_info = self.get_battery_info()
-
-            if "error" in battery_info:
-                messagebox.showerror("Error", "Cannot generate report: " + battery_info["error"])
-                return
-
-            # Prepare report data
-            report_data = {
-                "timestamp": datetime.now().isoformat(),
-                "battery_level": f"{battery_info.get('percent', 0)}%",
-                "status": battery_info.get("status", "Unknown"),
-                "health": battery_info.get("health", "Unknown"),
-                "technology": battery_info.get("technology", "Unknown"),
-                "temperature": battery_info.get("temperature", "N/A"),
-                "voltage": battery_info.get("voltage", "N/A"),
-                "current": battery_info.get("current", "N/A"),
-                "power": battery_info.get("power", "N/A"),
-                "cycle_count": battery_info.get("cycle_count", "N/A"),
-                "fast_charging": battery_info.get("fast_charge", "N/A"),
-                "time_remaining": self.info_labels["time_remaining"].cget("text"),
+            # Enhanced report data
+            report_data: dict = {
+                **self.battery_data,
                 "system_info": {
-                    "os": platform.system() + " " + platform.release(),
-                    "python_version": platform.python_version(),
-                    "architecture": platform.architecture()[0]
+                    "os": f"{platform.system()} {platform.release()}",
+                    "machine": platform.machine(),
+                    "app_version": getattr(self, 'app_version', batterypy.version),
+                    "generated": datetime.now().strftime("%Y-%m-%d %H:%M")
                 }
             }
 
-            # Ask user for save location
-            filename = filedialog.asksaveasfilename(
-                defaultextension=".json",
-                filetypes=[
-                    ("JSON files", "*.json"),
-                    ("Text files", "*.txt"),
-                    ("All files", "*.*")
-                ],
-                title="Save Battery Report"
-            )
+            Path(file_path).parent.mkdir(parents=True, exist_ok=True)
 
-            if filename:
-                if filename.endswith('.json'):
-                    with open(filename, 'w') as f:
-                        json.dump(report_data, f, indent=2)
-                else:
-                    # Save as readable text
-                    with open(filename, 'w') as f:
-                        f.write("Battery Monitor Report\n")
-                        f.write("=" * 25 + "\n\n")
-                        f.write(f"Generated: {report_data['timestamp']}\n\n")
-                        f.write(f"Battery Level: {report_data['battery_level']}\n")
-                        f.write(f"Status: {report_data['status']}\n")
-                        f.write(f"Health: {report_data['health']}\n")
-                        f.write(f"Technology: {report_data['technology']}\n")
-                        f.write(f"Temperature: {report_data['temperature']}\n")
-                        f.write(f"Voltage: {report_data['voltage']}\n")
-                        f.write(f"Current: {report_data['current']}\n")
-                        f.write(f"Power: {report_data['power']}\n")
-                        f.write(f"Cycle Count: {report_data['cycle_count']}\n")
-                        f.write(f"Fast Charging: {report_data['fast_charging']}\n")
-                        f.write(f"Time Remaining: {report_data['time_remaining']}\n\n")
-                        f.write("System Information:\n")
-                        f.write(f"OS: {report_data['system_info']['os']}\n")
-                        f.write(f"Python: {report_data['system_info']['python_version']}\n")
-                        f.write(f"Architecture: {report_data['system_info']['architecture']}\n")
+            if file_path.lower().endswith('.json'):
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(report_data, f, indent=2)
+            else:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write("BATTERY REPORT\n" + "=" * 50 + "\n\n")
+                    for key, value in report_data.items():
+                        if isinstance(value, dict):
+                            f.write(f"{key.replace('_', ' ').title()}:\n")
+                            for k, v in value.items():
+                                f.write(f"  {k.replace('_', ' ').title()}: {v}\n")
+                            f.write("\n")
+                        else:
+                            f.write(f"{key.replace('_', ' ').title()}: {value}\n")
 
-                messagebox.showinfo("Success", f"Report saved successfully to:\n{filename}")
-                self.status_var.set("Report saved successfully")
+            file_size = Path(file_path).stat().st_size / 1024
+            messagebox.showinfo("Success",
+                                f"Report saved successfully!\n"
+                                f"Location: {Path(file_path).name}\n"
+                                f"Size: {file_size:.1f} KB")
 
+        except (PermissionError, OSError) as e:
+            messagebox.showerror("Error", f"Failed to save report:\n{str(e)}")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save report: {str(e)}")
+            messagebox.showerror("Error", f"Unexpected error:\n{str(e)}")
 
-    def show_about(self):
-        """Show about dialog"""
-        about_text = f"""Battery Monitor v{self.version}
+    def show_about(self) -> None:
+        """Display an enhanced about dialog with professional styling"""
 
-Author: {self.author}
-License: {self.license}
-Website: {self.website}
-
-Description:
-A simple GUI application to monitor battery information including level, health, technology, temperature, and charging status.
-
-Features:
-• Real-time battery level monitoring
-• Comprehensive battery information display
-• Report generation and export
-• Cross-platform compatibility
-
-Requirements:
-• Python 3.6+
-• psutil library
-• tkinter (usually included with Python)
-
-© 2024 Battery Monitor. All rights reserved."""
-
-        # Create about window
-        about_window = tk.Toplevel(self.root)
-        about_window.title("About Battery Monitor")
+        # Create the about window
+        about_window = tk.Toplevel(self.root)  # Assuming self.root is your main window
+        about_window.title(f"About - {batterypy.caption}")
         about_window.geometry("400x350")
         about_window.resizable(False, False)
         about_window.transient(self.root)
         about_window.grab_set()
 
-        # Center the about window
+        # Center the window
         about_window.geometry("+%d+%d" % (
             self.root.winfo_rootx() + 50,
             self.root.winfo_rooty() + 50
         ))
 
-        # About content
-        about_frame = ttk.Frame(about_window, padding="20")
-        about_frame.pack(fill=tk.BOTH, expand=True)
+        # Configure style
+        style = ttk.Style()
 
-        about_label = ttk.Label(about_frame, text=about_text,
-                                justify=tk.LEFT, font=("Arial", 9))
-        about_label.pack(anchor=tk.W)
+        # Main frame with padding
+        main_frame = ttk.Frame(about_window, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # OK button
-        ok_btn = ttk.Button(about_frame, text="OK",
-                            command=about_window.destroy)
-        ok_btn.pack(pady=(20, 0))
+        # App icon/logo placeholder (you can replace with actual icon)
+        icon_frame = ttk.Frame(main_frame)
+        icon_frame.pack(pady=(0, 15))
+
+        # App title
+        title_label = ttk.Label(
+            main_frame,
+            text="BatteryPy",
+            font=("Segoe UI", 16, "bold")
+        )
+        title_label.pack(pady=(0, 5))
+
+        # Version
+        version_label = ttk.Label(
+            main_frame,
+            text=f"Version {batterypy.version}",
+            font=("Segoe UI", 10)
+        )
+        version_label.pack(pady=(0, 15))
+
+        # Description
+        desc_label = ttk.Label(
+            main_frame,
+            text="A comprehensive battery monitoring application\nbuilt with Python and Tkinter",
+            font=("Segoe UI", 9),
+            justify=tk.CENTER
+        )
+        desc_label.pack(pady=(0, 15))
+
+        # Author info
+        author_frame = ttk.Frame(main_frame)
+        author_frame.pack(pady=(0, 15))
+
+        ttk.Label(
+            author_frame,
+            text="Author:",
+            font=("Segoe UI", 9, "bold")
+        ).pack()
+
+        ttk.Label(
+            author_frame,
+            text=batterypy.author,
+            font=("Segoe UI", 9)
+        ).pack()
+
+        # Links frame
+        links_frame = ttk.Frame(main_frame)
+        links_frame.pack(pady=(0, 15))
+
+        # Website button
+        def open_website():
+            webbrowser.open(batterypy.website)
+
+        website_btn = ttk.Button(
+            links_frame,
+            text="🌐 Website",
+            command=open_website,
+            width=15
+        )
+        website_btn.pack(side=tk.LEFT, padx=(0, 10))
+
+        # GitHub button
+        def open_github():
+            webbrowser.open("https://github.com/aymenbrahimdjelloul/BatteryPy")
+
+        github_btn = ttk.Button(
+            links_frame,
+            text="📁 GitHub",
+            command=open_github,
+            width=15
+        )
+        github_btn.pack(side=tk.LEFT)
+
+        # Third-party libraries link
+        def show_third_party() -> None:
+            """ This function will show the third party software"""
+
+            third_party_window = tk.Toplevel(about_window)
+            third_party_window.title("Third-Party Libraries")
+            third_party_window.geometry("450x380")
+            third_party_window.resizable(False, False)
+            third_party_window.transient(about_window)
+            third_party_window.grab_set()
+
+            # Center relative to about window
+            third_party_window.geometry("+%d+%d" % (
+                about_window.winfo_rootx() + 25,
+                about_window.winfo_rooty() + 25
+            ))
+
+            tp_frame = ttk.Frame(third_party_window, padding="20")
+            tp_frame.pack(fill=tk.BOTH, expand=True)
+
+            ttk.Label(
+                tp_frame,
+                text="Third-Party Libraries",
+                font=("Segoe UI", 12, "bold")
+            ).pack(pady=(0, 10))
+
+            libraries_text: str = (
+                "This application integrates the following open-source libraries:\n\n"
+                "• BatteryPy – A utility library for accessing detailed battery status and power information.\n\n"
+                "• tkinter – Python’s standard GUI toolkit, used to build the application's graphical user interface.\n\n"
+                "We are deeply grateful to the developers and contributors of these libraries "
+                "for their invaluable work in supporting the open-source ecosystem."
+            )
+
+            text_widget = tk.Text(
+                tp_frame,
+                wrap=tk.WORD,
+                height=14,
+                font=("Segoe UI", 11),
+                relief="flat",
+                bg=third_party_window.cget("bg"),
+                state="normal"
+            )
+            text_widget.insert("1.0", libraries_text)
+            text_widget.configure(state="disabled")
+            text_widget.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
+
+            ttk.Button(
+                tp_frame,
+                text="Close",
+                command=third_party_window.destroy
+            ).pack()
+
+        third_party_link = ttk.Button(
+            main_frame,
+            text="View Third-Party Libraries",
+            command=show_third_party,
+            style="Link.TButton"
+        )
+        third_party_link.pack(pady=(0, 15))
+
+        # Configure link button style
+        style.configure("Link.TButton", foreground="blue")
+
+        # Copyright
+        copyright_label = ttk.Label(
+            main_frame,
+            text="© 2025 Aymen Brahim Djelloul. All rights reserved.",
+            font=("Segoe UI", 10),
+            foreground="gray"
+        )
+        copyright_label.pack(pady=(0, 5))
+
+        # Focus and key bindings
+        about_window.bind('<Escape>', lambda e: about_window.destroy())
+        about_window.bind('<Return>', lambda e: about_window.destroy())
 
 
-def main():
+class Updater:
+    """Updater class contains the logic to check for new updates from GitHub releases"""
+
+    repo_owner: str = batterypy.author.replace(" ", "").lower()
+    repo_name: str = "BatteryPy"
+
+    # GitHub API URL for latest release
+    latest_release_url: str = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+
+    # Headers to avoid rate limiting and identify your app
+    headers: dict = {
+        "User-Agent": f"{repo_name}-Updater/1.0",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    # Declare timeout
+    timeout: int = 5
+
+    # Cache settings
+    cache_file: str = ".update_cache.json"
+    cache_expiry_hours: int = 24
+
+    def __init__(self) -> None:
+        """
+        Initialize the Updater
+
+        Args:
+            current_version: Current version of your application (e.g., "1.0.0")
+            repo_owner: GitHub repository owner/organization name
+            repo_name: GitHub repository name
+        """
+
+        self.r_session = requests.Session()
+        self.r_session.headers.update(self.headers)
+
+    def is_update(self) -> Optional[bool]:
+        """
+        Check if there's a new update available
+
+        Returns:
+            True if update available, False if current, None if error occurred
+        """
+        try:
+            latest_info = self._get_latest_release_info()
+            if not latest_info:
+                return None
+
+            latest_version = latest_info.get('version', '').lstrip('v')
+            current_version = batterypy.version
+
+            # Simple version comparison (you might want to use semantic versioning)
+            return self._compare_versions(current_version, latest_version)
+
+        except Exception as e:
+            print(f"Error checking for updates: {e}")
+            return None
+
+    def get_update_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about the latest release
+
+        Returns:
+            Dictionary with version, description, download_size_mb, download_url
+        """
+        try:
+            return self._get_latest_release_info()
+        except Exception as e:
+            print(f"Error getting update info: {e}")
+            return None
+
+    def _get_latest_release_info(self) -> Optional[Dict[str, Any]]:
+        """Get latest release info with caching"""
+        # Try to get from cache first
+        cached_data = self._get_cached_data()
+        if cached_data:
+            return cached_data
+
+        # Fetch fresh data
+        response = self._request_latest_release()
+        if not response:
+            return None
+
+        parsed_data = self._parse_latest_release(response)
+        if parsed_data:
+            self._save_to_cache(parsed_data)
+
+        return parsed_data
+
+    def _request_latest_release(self) -> Optional[requests.Response]:
+        """Make HTTP request to GitHub API for latest release"""
+        try:
+            response = self.r_session.get(
+                self.latest_release_url,
+                timeout=self.timeout
+            )
+
+            if response.status_code == 200:
+                return response
+            elif response.status_code == 404:
+                print(f"Repository {self.repo_owner}/{self.repo_name} not found or no releases")
+            elif response.status_code == 403:
+                print("GitHub API rate limit exceeded")
+            else:
+                print(f"GitHub API returned status code: {response.status_code}")
+
+            return None
+
+        except requests.exceptions.Timeout:
+            print("Request timed out")
+            return None
+        except requests.exceptions.ConnectionError:
+            print("Connection error occurred")
+            return None
+        except Exception as e:
+            print(f"Request error: {e}")
+            return None
+
+    def _parse_latest_release(self, response: requests.Response) -> Optional[Dict[str, Any]]:
+        """Parse the GitHub latest release JSON response"""
+        try:
+            data = response.json()
+
+            # Extract main information
+            version = data.get('tag_name', '')
+            description = data.get('body', 'No description available')
+            published_at = data.get('published_at', '')
+            html_url = data.get('html_url', '')
+
+            # Get download information from assets
+            assets = data.get('assets', [])
+            download_info = self._extract_download_info(assets)
+
+            parsed_info = {
+                'version': version,
+                'description': description,
+                'published_at': published_at,
+                'html_url': html_url,
+                'download_size_mb': download_info['size_mb'],
+                'download_url': download_info['download_url'],
+                'asset_name': download_info['asset_name'],
+                'cached_at': datetime.now().isoformat()
+            }
+
+            return parsed_info
+
+        except json.JSONDecodeError:
+            print("Failed to parse JSON response")
+            return None
+        except Exception as e:
+            print(f"Error parsing release data: {e}")
+            return None
+
+    def _extract_download_info(self, assets: list) -> Dict[str, Any]:
+        """Extract download information from release assets"""
+        if not assets:
+            return {
+                'size_mb': 0,
+                'download_url': '',
+                'asset_name': 'No assets available'
+            }
+
+        # Get the first asset (you might want to filter by platform/type)
+        main_asset = assets[0]
+
+        # Convert size from bytes to MB
+        size_bytes = main_asset.get('size', 0)
+        size_mb = round(size_bytes / (1024 * 1024), 2) if size_bytes > 0 else 0
+
+        return {
+            'size_mb': size_mb,
+            'download_url': main_asset.get('browser_download_url', ''),
+            'asset_name': main_asset.get('name', 'Unknown')
+        }
+
+    def _compare_versions(self, current: str, latest: str) -> bool:
+        """
+        Simple version comparison
+        For production, consider using packaging.version for semantic versioning
+        """
+        try:
+            # Remove 'v' prefix if present and split by dots
+            current_parts = [int(x) for x in current.replace('v', '').split('.')]
+            latest_parts = [int(x) for x in latest.replace('v', '').split('.')]
+
+            # Pad shorter version with zeros
+            max_len = max(len(current_parts), len(latest_parts))
+            current_parts.extend([0] * (max_len - len(current_parts)))
+            latest_parts.extend([0] * (max_len - len(latest_parts)))
+
+            return latest_parts > current_parts
+
+        except (ValueError, AttributeError):
+            # Fallback to string comparison
+            return latest > current
+
+    def _get_cached_data(self) -> Optional[Dict[str, Any]]:
+        """Get data from cache if it exists and hasn't expired"""
+        try:
+            with open(self.cache_file, 'r') as f:
+                cached_data = json.load(f)
+
+            cached_time = datetime.fromisoformat(cached_data.get('cached_at', ''))
+            expiry_time = cached_time + timedelta(hours=self.cache_expiry_hours)
+
+            if datetime.now() < expiry_time:
+                return cached_data
+            else:
+                # Cache expired
+                return None
+
+        except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
+            return None
+
+    def _save_to_cache(self, data: Dict[str, Any]) -> None:
+        """Save data to cache file"""
+        try:
+            with open(self.cache_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save cache: {e}")
+
+    def clear_cache(self) -> None:
+        """Clear the cache file"""
+        try:
+            import os
+            os.remove(self.cache_file)
+            print("Cache cleared successfully")
+        except FileNotFoundError:
+            print("No cache file to clear")
+        except Exception as e:
+            print(f"Error clearing cache: {e}")
+
+
+def main() -> None:
+    """ This function will start the app"""
+
     root = tk.Tk()
-    app = BatteryMonitor(root)
+    BatteryPyInterface(root)
 
-    try:
-        root.mainloop()
-    except KeyboardInterrupt:
-        pass
+    root.mainloop()
 
 
 if __name__ == "__main__":
