@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import time
+import ctypes
 from platform import system
 from pathlib import Path
 from functools import lru_cache
@@ -25,18 +26,18 @@ from abc import ABC, abstractmethod
 
 # Declare software constants
 author: str = "Aymen Brahim Djelloul"
-version: str = "1.1"
+version: str = "1.3"
 caption: str = f"BatteryPy - v{version}"
 website: str = "https://aymenbrahimdjelloul.github.io/BatteryPy"
 
 # Declare supported platforms
-_SUPPORTED_PLATFORMS: tuple = ("Windows", "Linux")
+_SUPPORTED_PLATFORMS: tuple[str, str] = ("Windows", "Linux")
 
 # Define current system
 platform: str = system()
 
 # Set the fast charge rate at 30 Watts
-_fast_charge_rate: int = 30000
+_fast_charge_threshold: int = 20000
 
 
 class BatteryPyException(BaseException):
@@ -59,66 +60,80 @@ def _get_datetime() -> str:
     return datetime.now().strftime('%Y-%m-%d')
 
 
-def _is_battery() -> bool:
+def _has_battery() -> bool:
     """
-    This function check for battery presence in cross platform if battery not present raise BatteryPyException
+    Checks if the device has a battery.
 
     Returns:
-        bool: True if on battery, False if plugged in.
-
-    Raises:
-        BatteryPyException: If battery status cannot be determined.
+        bool: True if a battery is present, False otherwise.
     """
     try:
-        platform: str = sys.platform
+        platform = sys.platform
 
-        # Windows: Direct Win32 API call
+        # --- Windows ---
         if platform == "win32":
-            class PowerStatus(ctypes.Structure):
-                _fields_: list = [('ACLineStatus', ctypes.c_byte)] + [('_', ctypes.c_byte)] * 5
+            class SYSTEM_POWER_STATUS(ctypes.Structure):
+                _fields_ = [
+                    ('ACLineStatus', ctypes.c_byte),
+                    ('BatteryFlag', ctypes.c_byte),
+                    ('BatteryLifePercent', ctypes.c_byte),
+                    ('Reserved1', ctypes.c_byte),
+                    ('BatteryLifeTime', ctypes.c_ulong),
+                    ('BatteryFullLifeTime', ctypes.c_ulong),
+                ]
 
-            status = PowerStatus()
-            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
-                if status.ACLineStatus in (0, 1):
-                    return status.ACLineStatus == 0  # 0 = battery, 1 = AC
-            raise BatteryPyException("Windows power status unavailable")
+            status = SYSTEM_POWER_STATUS()
+            if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+                return False
+            # BatteryFlag bit 128 means no battery
+            if status.BatteryFlag & 128:
+                return False
+            return True
 
-        # Linux: Check AC adapter via sysfs (optimized path search)
+        # --- Linux ---
         elif platform.startswith("linux"):
-            for ac_path in ("/sys/class/power_supply/AC/online",
-                            "/sys/class/power_supply/AC0/online",
-                            "/sys/class/power_supply/ACAD/online"):
-                try:
-                    if os.path.exists(ac_path):
-                        with open(ac_path) as f:
-                            return f.read(1) != "1"  # Read only first char
-                except OSError:
-                    continue
+            # Check for battery presence in power_supply directory
+            battery_paths = [
+                "/sys/class/power_supply/BAT0",
+                "/sys/class/power_supply/BAT1",
+                "/sys/class/power_supply/battery",
+            ]
+            for path in battery_paths:
+                if os.path.exists(path):
+                    # Also check if 'present' file exists and says '1'
+                    present_path = os.path.join(path, "present")
+                    if os.path.exists(present_path):
+                        try:
+                            with open(present_path) as f:
+                                return f.read(1) == "1"
+                        except OSError:
+                            return True  # If we can't read, assume present
+                    else:
+                        return True  # No 'present' file, but battery dir exists
+            return False
 
-            raise BatteryPyException("Linux AC status undetectable")
-
-        # macOS: pmset command (optimized)
+        # --- macOS ---
         elif platform == "darwin":
             try:
-                output: str = subprocess.check_output(["pmset", "-g", "batt"],
-                                                 timeout=3, text=True).lower()
-                if "discharging" in output:
-                    return True
-                elif "charging" in output or "charged" in output:
+                output = subprocess.check_output(
+                    ["pmset", "-g", "batt"],
+                    timeout=3,
+                    text=True
+                ).lower()
+                # If pmset returns battery info, battery exists
+                if "no battery" in output:
                     return False
-
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-                pass
-
-            raise BatteryPyException("macOS battery status undetectable")
+                if "battery" in output:
+                    return True
+            except Exception:
+                return False
+            return False
 
         else:
-            raise BatteryPyException(f"Unsupported OS: {platform}")
+            return False
 
-    except BatteryPyException:
-        raise
-    except Exception as e:
-        raise BatteryPyException(f"Battery detection failed: {e}")
+    except Exception:
+        return False
 
 
 class _BatteryPy(ABC):
@@ -217,7 +232,7 @@ class _BatteryPy(ABC):
         data: dict[str, Any] = {
             'battery_percentage': self._format_percentage(self.battery_percent) or "n/a",
             'power_status': self._format_power_status(self.is_plugged()),
-            'design_capacity': self._format_capacity(self.design_capacity()),
+            'design_capacity': self._format_capacity(self.design_capacity),
             'charge_rate': self._format_charge_rate(self.charge_rate()),
             'fast_charge': self.is_fast_charge() or "n/a",
             'manufacturer': self.manufacturer or "n/a",
@@ -245,7 +260,7 @@ class _BatteryPy(ABC):
                 chemistry = int(result.stdout.strip())
 
                 # Battery chemistry voltage mapping
-                voltage_map = {
+                voltage_map: dict[int, float] = {
                     1: 3.7,  # Other
                     2: 3.7,  # Unknown
                     3: 12.0,  # Lead Acid
@@ -325,9 +340,9 @@ if platform == "Windows":
     import html
     from ctypes import byref, Structure, c_ulong, c_ubyte, c_bool
 
-
     class _SYSTEM_BATTERY_STATE(Structure):
         """Windows SYSTEM_BATTERY_STATE structure for battery information."""
+
         _fields_: list = [
             ("AcOnLine", c_bool),
             ("BatteryPresent", c_bool),
@@ -393,10 +408,8 @@ if platform == "Windows":
             super().__init__()
 
             # Check if Battery exists
-            if not _is_battery():
-                # in case of no battery presenceRaise BatteryPyException
-                raise BatteryPyException(
-                    "Battery not detected: BatteryPy could not find any battery device on this system.")
+            if not _has_battery():
+                raise BatteryPyException("BatteryPy cannot detect any battery")
 
             self.dev_mode = dev_mode
             self._last_api_call = 0
@@ -575,6 +588,7 @@ if platform == "Windows":
                 return False
             return abs(self.charge_rate()) > self._FAST_CHARGE_THRESHOLD_MW
 
+        @property
         def battery_health(self) -> float:
             """Calculate battery health percentage.
 
@@ -1368,20 +1382,24 @@ elif platform == "Linux":
             "temp": "temp"
         }
 
-        def __init__(self, dev_mode: bool = False, battery_name: Optional[str] = None) -> None:
+        def __init__(self, dev_mode: bool = False) -> None:
             super().__init__()
 
             self.dev_mode = dev_mode
-            self.battery_path = None
-            self.ac_adapter_paths = []
+            self._battery_path = None
+            self._ac_adapter_paths = []
+
+            # Check if Battery exists
+            if not _has_battery():
+                raise BatteryPyException("BatteryPy cannot detect any battery")
 
             # Initialize battery and AC adapter paths
-            self._discover_power_supplies(battery_name)
+            self._discover_power_supplies()
 
-            if not self.battery_path and not dev_mode:
+            if not self._battery_path and not dev_mode:
                 raise RuntimeError("No battery found in /sys/class/power_supply/")
 
-        def _discover_power_supplies(self, preferred_battery: Optional[str] = None) -> None:
+        def _discover_power_supplies(self) -> None:
             """
             Discover available batteries and AC adapters in the system
             """
@@ -1401,18 +1419,18 @@ elif platform == "Linux":
                     if supply_type == "Battery":
                         batteries.append(supply_path)
                     elif supply_type == "Mains":
-                        self.ac_adapter_paths.append(supply_path)
+                        self._ac_adapter_paths.append(supply_path)
 
             # Select battery
             if preferred_battery:
                 preferred_path = os.path.join(self.POWER_SUPPLY_PATH, preferred_battery)
                 if preferred_path in batteries:
-                    self.battery_path = preferred_path
+                    self._battery_path = preferred_path
                 else:
                     raise ValueError(f"Battery '{preferred_battery}' not found")
             elif batteries:
                 # Use first available battery
-                self.battery_path = batteries[0]
+                self._battery_path = batteries[0]
 
         @staticmethod
         def _read_file(file_path: str) -> Optional[str]:
@@ -1442,12 +1460,12 @@ elif platform == "Linux":
             Returns:
                 Property value as string or None if not available
             """
-            if not self.battery_path:
+            if not self._battery_path:
                 if self.dev_mode:
                     print(f"[DEV] _read_battery_property({property_name}): No battery path available")
                 return None
 
-            property_path = os.path.join(self.battery_path, property_name)
+            property_path = os.path.join(self._battery_path, property_name)
             value = self._read_file(property_path)
 
             if self.dev_mode:
@@ -1585,7 +1603,7 @@ elif platform == "Linux":
                 True if plugged in, False if on battery, None on error
             """
             # Check AC adapter status
-            for i, ac_path in enumerate(self.ac_adapter_paths):
+            for i, ac_path in enumerate(self._ac_adapter_paths):
                 online_file = os.path.join(ac_path, "online")
                 online_status = self._read_file(online_file)
                 if online_status == "1":
@@ -1695,7 +1713,7 @@ elif platform == "Linux":
 
             # Consider fast charging if rate > 15W (arbitrary threshold)
             # You may want to adjust this based on your device specifications
-            return charge_rate > _fast_charge_rate  # 15W in mW
+            return charge_rate > _fast_charge_threshold  # 15W in mW
 
         def battery_voltage(self) -> Optional[float]:
             """

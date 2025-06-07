@@ -49,8 +49,8 @@ class BatteryPyInterface:
         self.root.title(batterypy.caption)
         self.root.resizable(False, False)
 
-        window_width: int = 500
-        window_height: int = 600
+        window_width: int = 420
+        window_height: int = 550
 
         # Get screen dimensions
         screen_width: int = self.root.winfo_screenwidth()
@@ -237,14 +237,14 @@ class BatteryPyInterface:
         for i, (key, value) in enumerate(data.items()):
             label_text = key.replace("_", " ").title()
 
-            ttk.Label(self.info_frame, text=f"{label_text}  :", font=("Segoe UI", 11, "bold")).grid(
+            ttk.Label(self.info_frame, text=f"{label_text}  :", font=("Segoe UI", 10, "bold")).grid(
                 row=i, column=0, sticky=tk.W, padx=(0, 10), pady=3
             )
 
             var = tk.StringVar(value=str(value))
             self.info_vars[key] = var
 
-            value_label = ttk.Label(self.info_frame, textvariable=var, font=("Segoe UI", 13))
+            value_label = ttk.Label(self.info_frame, textvariable=var, font=("Segoe UI", 11))
             value_label.grid(row=i, column=1, sticky=tk.W, pady=3)
             self.info_labels[key] = value_label  # Save label for updates
 
