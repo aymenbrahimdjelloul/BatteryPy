@@ -17,6 +17,7 @@ import json
 import threading
 import webbrowser
 import platform
+
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog, PhotoImage, font
@@ -48,11 +49,18 @@ class BatteryPyInterface:
         self.root.title(batterypy.caption)
         self.root.resizable(False, False)
 
-        # Center the window on the screen
-        window_width: int = 400
-        window_height: int = 500
-        x: int = (self.root.winfo_screenwidth() // 2) - (window_width // 2)
-        y: int = (self.root.winfo_screenheight() // 2) - (window_height // 2)
+        window_width: int = 500
+        window_height: int = 600
+
+        # Get screen dimensions
+        screen_width: int = self.root.winfo_screenwidth()
+        screen_height: int = self.root.winfo_screenheight()
+
+        # Calculate center position
+        x: int = (screen_width - window_width) // 2
+        y: int = (screen_height - window_height) // 2
+
+        # Set geometry
         self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 
         # Load icon (compact and safe)
@@ -99,17 +107,13 @@ class BatteryPyInterface:
                 new_version = update_info.get('version', 'Unknown')
                 download_size = update_info.get('download_size_mb', 0)
 
-                message = (
-                    f"🔄 A new version of BatteryPy is available!\n\n"
-                    f"📦 Latest version: {new_version}\n"
-                    f"💾 Download size: {download_size} MB\n\n"
-                    f"Would you like to download and install it?"
-                )
-                download_url = update_info.get('download_url', '')
+                message: str = f" Update {new_version} ({download_size} MB) available. Install?"
+
+                download_url: str = update_info.get('download_url', '')
             else:
                 # Fallback message when update_info is unavailable
                 message = (
-                    "🔄 A new version of BatteryPy is available!\n\n"
+                    " A new version of BatteryPy is available!\n\n"
                     "Would you like to download and install it?"
                 )
                 download_url = ''
@@ -141,6 +145,9 @@ class BatteryPyInterface:
 
         except BatteryPyException:
             self.battery: None = None
+
+        # Declare variables
+        self.frame = None
 
         # Initialize the user interface
         self.create_ui()
@@ -230,14 +237,14 @@ class BatteryPyInterface:
         for i, (key, value) in enumerate(data.items()):
             label_text = key.replace("_", " ").title()
 
-            ttk.Label(self.info_frame, text=f"{label_text}  :", font=("Segoe UI", 10, "bold")).grid(
+            ttk.Label(self.info_frame, text=f"{label_text}  :", font=("Segoe UI", 11, "bold")).grid(
                 row=i, column=0, sticky=tk.W, padx=(0, 10), pady=3
             )
 
             var = tk.StringVar(value=str(value))
             self.info_vars[key] = var
 
-            value_label = ttk.Label(self.info_frame, textvariable=var, font=("Segoe UI", 10))
+            value_label = ttk.Label(self.info_frame, textvariable=var, font=("Segoe UI", 13))
             value_label.grid(row=i, column=1, sticky=tk.W, pady=3)
             self.info_labels[key] = value_label  # Save label for updates
 
@@ -255,7 +262,7 @@ class BatteryPyInterface:
             while True:
                 updated_data: dict = {
                     "Power Status": "Plugged in" if self.battery.is_plugged() else "On Battery",
-                    "Battery percentage": self.battery.battery_percent(),
+                    "Battery percentage": self.battery.battery_percent,
                     "Battery Voltage": self.battery.battery_voltage(),
                     "Battery Temperature": self.battery.battery_temperature()
                 }
@@ -530,7 +537,7 @@ class Updater:
     latest_release_url: str = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
     # Headers to avoid rate limiting and identify your app
-    headers: dict = {
+    headers: dict[str, str] = {
         "User-Agent": f"{repo_name}-Updater/1.0",
         "Accept": "application/vnd.github.v3+json"
     }

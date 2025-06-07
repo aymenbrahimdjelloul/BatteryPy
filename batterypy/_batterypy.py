@@ -14,16 +14,11 @@ License : MIT
 import os
 import re
 import sys
-import html
 import time
-import ctypes
-import winreg
-import subprocess
 from platform import system
 from pathlib import Path
 from functools import lru_cache
 from typing import Dict, Optional, Union, Any
-from ctypes import byref, Structure, c_ulong, c_ubyte, c_bool
 from datetime import datetime
 from abc import ABC, abstractmethod
 
@@ -48,35 +43,11 @@ class BatteryPyException(BaseException):
     """ This class contain the BatteryPy exception"""
 
     def __init__(self, exception: str) -> None:
-        self.e = exception
+        self.e: str = exception
 
     def __str__(self) -> str:
         """ This method will return the BatteryPy exception error"""
         return f"ERROR : {self.e}"
-
-
-def _mw_to_w(value: int) -> int:
-    """
-    Convert power from milliwatts to watts, rounded to the nearest integer.
-
-    Parameters:
-        value (float): Power in milliwatts.
-
-    Returns:
-        int: Power in watts, rounded.
-    """
-    return round(value / 1000)
-
-
-# def _mwh_to_mah(self, mwh: float) -> float:
-#     """
-#     Parameters:
-#         mwh (float): Energy in milli-watt-hours.
-#
-#     Returns:
-#         float: Energy in milli-ampere-hours, or 0.0 if voltage is invalid.
-#     """
-#     return int(mwh / int(self.get_current_voltage(False)))
 
 
 def _get_datetime() -> str:
@@ -90,82 +61,64 @@ def _get_datetime() -> str:
 
 def _is_battery() -> bool:
     """
-    Detects if the system is running on battery power.
+    This function check for battery presence in cross platform if battery not present raise BatteryPyException
 
     Returns:
         bool: True if on battery, False if plugged in.
 
     Raises:
-        BatteryPyException: If battery status cannot be determined or unsupported OS.
+        BatteryPyException: If battery status cannot be determined.
     """
     try:
-        if sys.platform == "win32":
-            class _SYSTEM_POWER_STATUS(ctypes.Structure):
-                _fields_ = [
-                    ('ACLineStatus', ctypes.c_byte),
-                    ('BatteryFlag', ctypes.c_byte),
-                    ('BatteryLifePercent', ctypes.c_byte),
-                    ('Reserved1', ctypes.c_byte),
-                    ('BatteryLifeTime', ctypes.c_ulong),
-                    ('BatteryFullLifeTime', ctypes.c_ulong)
-                ]
+        platform: str = sys.platform
 
-            status = _SYSTEM_POWER_STATUS()
-            if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
-                raise BatteryPyException("Unable to get power status from Windows API")
+        # Windows: Direct Win32 API call
+        if platform == "win32":
+            class PowerStatus(ctypes.Structure):
+                _fields_: list = [('ACLineStatus', ctypes.c_byte)] + [('_', ctypes.c_byte)] * 5
 
-            if status.ACLineStatus == 0:
-                return True  # On battery
-            elif status.ACLineStatus == 1:
-                return False
-            else:
-                raise BatteryPyException("Battery status undetectable (Windows)")
+            status = PowerStatus()
+            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+                if status.ACLineStatus in (0, 1):
+                    return status.ACLineStatus == 0  # 0 = battery, 1 = AC
+            raise BatteryPyException("Windows power status unavailable")
 
-        elif sys.platform.startswith("linux"):
-            ac_paths = [
-                "/sys/class/power_supply/AC/online",
-                "/sys/class/power_supply/AC0/online",
-                "/sys/class/power_supply/ACAD/online",
-                "/sys/class/power_supply/Mains/online"
-            ]
+        # Linux: Check AC adapter via sysfs (optimized path search)
+        elif platform.startswith("linux"):
+            for ac_path in ("/sys/class/power_supply/AC/online",
+                            "/sys/class/power_supply/AC0/online",
+                            "/sys/class/power_supply/ACAD/online"):
+                try:
+                    if os.path.exists(ac_path):
+                        with open(ac_path) as f:
+                            return f.read(1) != "1"  # Read only first char
+                except OSError:
+                    continue
 
-            for path in ac_paths:
-                if os.path.exists(path):
-                    with open(path) as f:
-                        return f.read().strip() != "1"  # True if not online (on battery)
-            raise BatteryPyException("AC adapter status undetectable (Linux)")
+            raise BatteryPyException("Linux AC status undetectable")
 
-        elif sys.platform == "darwin":
-            output = subprocess.check_output(["pmset", "-g", "batt"], universal_newlines=True).lower()
-            if "discharging" in output:
-                return True
-            elif "charging" in output or "charged" in output:
-                return False
-            raise BatteryPyException("Battery status undetectable (macOS)")
+        # macOS: pmset command (optimized)
+        elif platform == "darwin":
+            try:
+                output: str = subprocess.check_output(["pmset", "-g", "batt"],
+                                                 timeout=3, text=True).lower()
+                if "discharging" in output:
+                    return True
+                elif "charging" in output or "charged" in output:
+                    return False
+
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+            raise BatteryPyException("macOS battery status undetectable")
 
         else:
-            raise BatteryPyException(f"Unsupported OS: {sys.platform}")
+            raise BatteryPyException(f"Unsupported OS: {platform}")
 
+    except BatteryPyException:
+        raise
     except Exception as e:
-        raise BatteryPyException(f"[ERROR] {e}")
-
-
-class _SYSTEM_BATTERY_STATE(Structure):
-    """Windows SYSTEM_BATTERY_STATE structure for battery information."""
-    _fields_: list = [
-        ("AcOnLine", c_bool),
-        ("BatteryPresent", c_bool),
-        ("Charging", c_bool),
-        ("Discharging", c_bool),
-        ("Spare1", c_ubyte * 3),
-        ("Tag", c_ubyte),
-        ("MaxCapacity", c_ulong),
-        ("RemainingCapacity", c_ulong),
-        ("Rate", c_ulong),
-        ("EstimatedTime", c_ulong),
-        ("DefaultAlert1", c_ulong),
-        ("DefaultAlert2", c_ulong),
-    ]
+        raise BatteryPyException(f"Battery detection failed: {e}")
 
 
 class _BatteryPy(ABC):
@@ -195,6 +148,16 @@ class _BatteryPy(ABC):
     @abstractmethod
     def remaining_capacity(self) -> int:
         """Get remaining battery capacity in mWh."""
+        pass
+
+    @abstractmethod
+    def design_capacity(self) -> int:
+        """
+        Get the battery design capacity in mWh or mAh
+
+        Returns:
+            Design capacity or None if unavailable
+        """
         pass
 
     @abstractmethod
@@ -240,7 +203,7 @@ class _BatteryPy(ABC):
         """Get battery temperature in Celsius."""
         pass
 
-    def get_result(self, include_raw_data: bool = False) -> Dict[str, Any]:
+    def get_result(self) -> Dict[str, Any]:
         """Collect all battery information into a comprehensive dictionary.
 
         Args:
@@ -249,157 +212,137 @@ class _BatteryPy(ABC):
         Returns:
             Dictionary with all available battery information
         """
-        # Get raw values
-        percentage = self.battery_percent()
-        is_plugged = self.is_plugged()
-        remaining_cap = self.remaining_capacity()
-        charge_rate_val = self.charge_rate()
-        health = self.battery_health()
-        voltage = self.battery_voltage()
-        temperature = self.battery_temperature()
 
         # Build the formatted result dictionary
-        data: dict = {
-            'battery_percentage': self._format_percentage(percentage),
-            'power_status': self._format_power_status(is_plugged),
-            'remaining_capacity': self._format_capacity(remaining_cap),
-            'charge_rate': self._format_charge_rate(charge_rate_val),
-            'is_fast_charging': self.is_fast_charge(),
-            'manufacturer': self.manufacturer or "Unknown",
-            'technology': self.battery_technology or "Unknown",
+        data: dict[str, Any] = {
+            'battery_percentage': self._format_percentage(self.battery_percent) or "n/a",
+            'power_status': self._format_power_status(self.is_plugged()),
+            'design_capacity': self._format_capacity(self.design_capacity()),
+            'charge_rate': self._format_charge_rate(self.charge_rate()),
+            'fast_charge': self.is_fast_charge() or "n/a",
+            'manufacturer': self.manufacturer or "n/a",
+            'technology': self.battery_technology or "n/a",
             'cycle_count': self.cycle_count or 0,
-            'battery_health': self._format_health(health),
-            'battery_voltage': self._format_voltage(voltage),
-            'battery_temperature': self._format_temperature(temperature),
+            'battery_health': self._format_health(self.battery_health),
+            'battery_voltage': self._format_voltage(self.battery_voltage()),
+            'battery_temperature': self._format_temperature(self.battery_temperature()),
             'report_generated': _get_datetime(),
         }
 
-        # Include raw numerical data if requested
-        if include_raw_data:
-            data['raw_data']: dict = {
-                'percentage_value': percentage,
-                'is_plugged_value': is_plugged,
-                'remaining_capacity_mwh': remaining_cap,
-                'charge_rate_mw': charge_rate_val,
-                'health_percentage': health,
-                'voltage_v': voltage,
-                'temperature_c': temperature,
-                'cycle_count_value': self.cycle_count
-            }
-
         return data
 
-    @staticmethod
-    def _format_percentage(percentage: int) -> str:
-        """Format battery percentage with appropriate handling."""
-        return f"{percentage}%" if percentage is not None else "Unknown"
+    def _estimate_battery_voltage(self) -> Optional[float]:
+        """Estimate voltage based on battery chemistry from PowerShell."""
+        try:
+            cmd = [
+                'powershell.exe', '-NoProfile', '-Command',
+                "(Get-WmiObject Win32_Battery).Chemistry"
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
+                                    creationflags=subprocess.CREATE_NO_WINDOW)
+
+            if result.returncode == 0 and result.stdout.strip():
+                chemistry = int(result.stdout.strip())
+
+                # Battery chemistry voltage mapping
+                voltage_map = {
+                    1: 3.7,  # Other
+                    2: 3.7,  # Unknown
+                    3: 12.0,  # Lead Acid
+                    4: 3.6,  # Nickel Cadmium
+                    5: 3.6,  # Nickel Metal Hydride
+                    6: 3.7,  # lithium-ion (most common in laptops)
+                    7: 1.4,  # Zinc Air
+                    8: 3.7  # Lithium Polymer
+                }
+
+                voltage = voltage_map.get(chemistry, 11.1)  # Default to common laptop voltage
+
+                # Multiply by typical cell count for laptops
+                if chemistry in [6, 8]:  # Li-ion/Li-Po
+                    voltage = voltage * 3  # Most laptops use 3-cell config (11.1 V)
+
+                if self.dev_mode:
+                    print(f"[WinBattery] Estimated voltage (chemistry {chemistry}): {voltage:.1f}V")
+                return voltage
+
+        except Exception as e:
+            if self.dev_mode:
+                print(f"[WinBattery] Chemistry estimation error: {e}")
+
+        return None
+
 
     @staticmethod
-    def _format_power_status(is_plugged: bool) -> str:
-        """Format power connection status."""
+    def _format_percentage(percentage: Optional[int]) -> str:
+        """Format battery percentage as a string with a percent symbol."""
+        return f"{percentage}%" if percentage is not None and percentage >= 0 else "n/a"
+
+    @staticmethod
+    def _format_power_status(is_plugged: Optional[bool]) -> str:
+        """Format power connection status as 'Plugged In' or 'On Battery'."""
         if is_plugged is None:
-            return "Unknown"
-        return 'Plugged In' if is_plugged else 'On Battery'
+            return "n/a"
+        return "Plugged In" if is_plugged else "On Battery"
 
     @staticmethod
-    def _format_capacity(capacity: int) -> str:
-        """Format battery capacity with units."""
-        return f"{capacity:,} mWh" if capacity is not None and capacity > 0 else "Unknown"
+    def _format_capacity(capacity: Optional[int]) -> str:
+        """Format battery capacity in mWh, using thousands separator."""
+        return f"{capacity:,} mWh" if capacity is not None and capacity > 0 else "n/a"
 
     @staticmethod
-    def _format_charge_rate(rate: int) -> str:
-        """Format charge rate with direction indicator."""
+    def _format_charge_rate(rate: Optional[int]) -> str:
+        """Format charge/discharge rate in mW with charging direction."""
         if rate is None or rate == 0:
-            return "Unknown"
-
+            return "n/a"
         direction = "Charging" if rate > 0 else "Discharging"
         return f"{abs(rate):,} mW ({direction})"
 
     @staticmethod
-    def _format_health(health: float) -> str:
-        """Format battery health percentage."""
-        return f"{health:.1f}%" if health is not None and health >= 0 else "Unknown"
+    def _format_health(health: Optional[float]) -> str:
+        """Format battery health as a percentage with one decimal place."""
+        return f"{health:.1f}%" if health is not None and health >= 0 else "n/a"
 
     @staticmethod
     def _format_voltage(voltage: Optional[float]) -> str:
-        """Format battery voltage with units."""
-        return f"{voltage:.2f} V" if voltage is not None else "Unknown"
+        """Format battery voltage in volts with two decimal places."""
+        return f"{voltage:.2f} V" if voltage is not None and voltage >= 0 else "n/a"
 
     @staticmethod
     def _format_temperature(temperature: Optional[float]) -> str:
-        """Format battery temperature with units."""
-        if temperature is not None:
-            return f"{temperature:.1f}°C"
-        return "Unknown"
+        """Format battery temperature in Celsius with one decimal place."""
+        return f"{temperature:.1f}°C" if temperature is not None else "n/a"
 
-    def is_battery_critical(self, threshold: int = 10) -> bool:
-        """Check if the battery level is critically low.
-
-        Args:
-            threshold: Percentage threshold for critical battery level
-
-        Returns:
-            True if battery is below the threshold and not plugged in
-        """
-        percentage = self.battery_percent()
-        return (percentage is not None and
-                percentage <= threshold and
-                not self.is_plugged())
-
-    def get_battery_status_icon(self) -> str:
-        """Get a Unicode icon representing current battery status.
-
-        Returns:
-            Unicode character representing battery state
-        """
-        percentage = self.battery_percent()
-        is_plugged = self.is_plugged()
-
-        if is_plugged:
-            return "🔌"  # Plugged in
-        elif percentage is None:
-            return "❓"  # Unknown
-        elif percentage <= 10:
-            return "🪫"  # Critical
-        elif percentage <= 25:
-            return "🔋"  # Low
-        elif percentage <= 50:
-            return "🔋"  # Medium
-        elif percentage <= 75:
-            return "🔋"  # Good
-        else:
-            return "🔋"  # Full
-
-    def __str__(self) -> str:
-        """Human-readable string representation."""
-        percentage = self.battery_percent()
-        health = self.battery_health()
-        status = "Plugged In" if self.is_plugged() else "On Battery"
-
-        return (f"Battery: {percentage}% ({status}) | "
-                f"Health: {health:.1f}% | "
-                f"Manufacturer: {self.manufacturer}")
-
-    def __repr__(self) -> str:
-        """Developer-friendly string representation."""
-        return (f"{self.__class__.__name__}("
-                f"percentage={self.battery_percent()}, "
-                f"health={self.battery_health():.1f}, "
-                f"plugged={self.is_plugged()})")
-
-    # Backward compatibility methods
-    def get_formatted_result(self) -> Dict[str, str]:
-        """Get the formatted result for backward compatibility.
-
-        Returns:
-            Dictionary with formatted string values (deprecated, use get_result)
-        """
-        return {k: v for k, v in self.get_result().items()
-                if not isinstance(v, dict)}  # Exclude raw_data if present
 
 
 # Initialize BatteryPy
 if platform == "Windows":
+
+    # WINDOWS IMPORTS
+    import winreg
+    import ctypes
+    import subprocess
+    import html
+    from ctypes import byref, Structure, c_ulong, c_ubyte, c_bool
+
+
+    class _SYSTEM_BATTERY_STATE(Structure):
+        """Windows SYSTEM_BATTERY_STATE structure for battery information."""
+        _fields_: list = [
+            ("AcOnLine", c_bool),
+            ("BatteryPresent", c_bool),
+            ("Charging", c_bool),
+            ("Discharging", c_bool),
+            ("Spare1", c_ubyte * 3),
+            ("Tag", c_ubyte),
+            ("MaxCapacity", c_ulong),
+            ("RemainingCapacity", c_ulong),
+            ("Rate", c_ulong),
+            ("EstimatedTime", c_ulong),
+            ("DefaultAlert1", c_ulong),
+            ("DefaultAlert2", c_ulong),
+        ]
+
 
     class Battery(_BatteryPy):
         """
@@ -540,6 +483,7 @@ if platform == "Windows":
             """Get battery full charge capacity in mWh."""
             return self._battery_report.battery_full_capacity()
 
+        @property
         def battery_percent(self) -> int:
             """Get current battery charge percentage.
 
@@ -655,46 +599,6 @@ if platform == "Windows":
             except (ValueError, OverflowError):
                 return 0
 
-        def get_battery_info(self) -> Dict[str, Any]:
-            """Get comprehensive battery information.
-
-            Returns:
-                Dictionary containing all available battery information
-            """
-            return {
-                'manufacturer': self.manufacturer,
-                'technology': self.battery_technology,
-                'design_capacity_mwh': self.design_capacity,
-                'full_capacity_mwh': self.full_capacity,
-                'remaining_capacity_mwh': self.remaining_capacity(),
-                'cycle_count': self.cycle_count,
-                'battery_percentage': self.battery_percent(),
-                'battery_health_percent': self.battery_health(),
-                'is_plugged': self.is_plugged(),
-                'is_charging': self.is_charging(),
-                'is_discharging': self.is_discharging(),
-                'charge_rate_mw': self.charge_rate(),
-                'is_fast_charging': self.is_fast_charge(),
-                'estimated_time_remaining_minutes': self.estimated_time_remaining(),
-                'report_available': self._battery_report.is_report_available()
-            }
-
-        @lru_cache(maxsize=1)
-        def get_static_battery_info(self) -> Dict[str, Any]:
-            """Get static battery information (cached).
-
-            Returns:
-                Dictionary containing static battery specifications
-            """
-            return {
-                'manufacturer': self.manufacturer,
-                'technology': self.battery_technology,
-                'design_capacity_mwh': self.design_capacity,
-                'full_capacity_mwh': self.full_capacity,
-                'cycle_count': self.cycle_count,
-                'battery_health_percent': self.battery_health()
-            }
-
         def battery_voltage(self, use_simulation: bool = True) -> Optional[float]:
             """Get battery voltage using only Windows built-in APIs and standard library.
 
@@ -761,18 +665,11 @@ if platform == "Windows":
                 if self.dev_mode:
                     print(f"[WinBattery] PortableBattery method failed: {e}")
 
-            # Method 5: Estimate based on battery chemistry
-            try:
-                voltage = self._estimate_voltage_from_chemistry()
-                if voltage:
-                    return voltage
-            except Exception as e:
-                if self.dev_mode:
-                    print(f"[WinBattery] Chemistry estimation failed: {e}")
-
             if self.dev_mode:
                 print("[WinBattery] All voltage detection methods failed")
-            return None
+
+            # Fallback
+            return self._estimate_battery_voltage()
 
         def _get_voltage_from_registry(self) -> Optional[float]:
             """Extract battery voltage from Windows Registry."""
@@ -872,47 +769,6 @@ if platform == "Windows":
 
             return None
 
-        def _estimate_voltage_from_chemistry(self) -> Optional[float]:
-            """Estimate voltage based on battery chemistry from PowerShell."""
-            try:
-                cmd = [
-                    'powershell.exe', '-NoProfile', '-Command',
-                    "(Get-WmiObject Win32_Battery).Chemistry"
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
-                                        creationflags=subprocess.CREATE_NO_WINDOW)
-
-                if result.returncode == 0 and result.stdout.strip():
-                    chemistry = int(result.stdout.strip())
-
-                    # Battery chemistry voltage mapping
-                    voltage_map = {
-                        1: 3.7,  # Other
-                        2: 3.7,  # Unknown
-                        3: 12.0,  # Lead Acid
-                        4: 3.6,  # Nickel Cadmium
-                        5: 3.6,  # Nickel Metal Hydride
-                        6: 3.7,  # lithium-ion (most common in laptops)
-                        7: 1.4,  # Zinc Air
-                        8: 3.7  # Lithium Polymer
-                    }
-
-                    voltage = voltage_map.get(chemistry, 11.1)  # Default to common laptop voltage
-
-                    # Multiply by typical cell count for laptops
-                    if chemistry in [6, 8]:  # Li-ion/Li-Po
-                        voltage = voltage * 3  # Most laptops use 3-cell config (11.1 V)
-
-                    if self.dev_mode:
-                        print(f"[WinBattery] Estimated voltage (chemistry {chemistry}): {voltage:.1f}V")
-                    return voltage
-
-            except Exception as e:
-                if self.dev_mode:
-                    print(f"[WinBattery] Chemistry estimation error: {e}")
-
-            return None
-
         def battery_temperature(self) -> Optional[float]:
             """Get battery temperature using only Windows built-in APIs and standard library.
 
@@ -999,6 +855,7 @@ if platform == "Windows":
 
             if self.dev_mode:
                 print("[WinBattery] All temperature detection methods failed")
+
             return None
 
         def _get_thermal_zone_temperature(self) -> Optional[float]:
@@ -1482,65 +1339,401 @@ if platform == "Windows":
 elif platform == "Linux":
 
     class Battery(_BatteryPy):
+        """
+        Linux-specific battery information class that reads from /sys/class/power_supply/
+        """
 
-        def __init__(self, dev_mode: bool = False) -> None:
+        # Linux battery sysfs paths
+        POWER_SUPPLY_PATH = "/sys/class/power_supply"
+
+        # Battery property mappings
+        BATTERY_PROPERTIES = {
+            "manufacturer": "manufacturer",
+            "technology": "technology",
+            "cycle_count": "cycle_count",
+            "capacity": "capacity",
+            "capacity_level": "capacity_level",
+            "status": "status",
+            "present": "present",
+            "voltage_now": "voltage_now",
+            "voltage_min_design": "voltage_min_design",
+            "current_now": "current_now",
+            "power_now": "power_now",
+            "energy_now": "energy_now",
+            "energy_full": "energy_full",
+            "energy_full_design": "energy_full_design",
+            "charge_now": "charge_now",
+            "charge_full": "charge_full",
+            "charge_full_design": "charge_full_design",
+            "temp": "temp"
+        }
+
+        def __init__(self, dev_mode: bool = False, battery_name: Optional[str] = None) -> None:
             super().__init__()
 
-            # Define constant
             self.dev_mode = dev_mode
+            self.battery_path = None
+            self.ac_adapter_paths = []
+
+            # Initialize battery and AC adapter paths
+            self._discover_power_supplies(battery_name)
+
+            if not self.battery_path and not dev_mode:
+                raise RuntimeError("No battery found in /sys/class/power_supply/")
+
+        def _discover_power_supplies(self, preferred_battery: Optional[str] = None) -> None:
+            """
+            Discover available batteries and AC adapters in the system
+            """
+            if not os.path.exists(self.POWER_SUPPLY_PATH):
+                return
+
+            power_supplies = os.listdir(self.POWER_SUPPLY_PATH)
+            batteries = []
+
+            for supply in power_supplies:
+                supply_path = os.path.join(self.POWER_SUPPLY_PATH, supply)
+                type_file = os.path.join(supply_path, "type")
+
+                if os.path.exists(type_file):
+                    supply_type = self._read_file(type_file)
+
+                    if supply_type == "Battery":
+                        batteries.append(supply_path)
+                    elif supply_type == "Mains":
+                        self.ac_adapter_paths.append(supply_path)
+
+            # Select battery
+            if preferred_battery:
+                preferred_path = os.path.join(self.POWER_SUPPLY_PATH, preferred_battery)
+                if preferred_path in batteries:
+                    self.battery_path = preferred_path
+                else:
+                    raise ValueError(f"Battery '{preferred_battery}' not found")
+            elif batteries:
+                # Use first available battery
+                self.battery_path = batteries[0]
+
+        @staticmethod
+        def _read_file(file_path: str) -> Optional[str]:
+            """
+            Reads the contents of the specified file and returns it as a string.
+
+            Args:
+                file_path: Path to the file to read
+
+            Returns:
+                The file content as a string (stripped), or None if error/empty
+            """
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    return content if content else None
+            except (FileNotFoundError, PermissionError, OSError):
+                return None
+
+        def _read_battery_property(self, property_name: str) -> Optional[str]:
+            """
+            Read a specific battery property from sysfs
+
+            Args:
+                property_name: Name of the property file to read
+
+            Returns:
+                Property value as string or None if not available
+            """
+            if not self.battery_path:
+                if self.dev_mode:
+                    print(f"[DEV] _read_battery_property({property_name}): No battery path available")
+                return None
+
+            property_path = os.path.join(self.battery_path, property_name)
+            value = self._read_file(property_path)
+
+            if self.dev_mode:
+                if value is not None:
+                    print(f"[DEV] _read_battery_property({property_name}): Read '{value}' from {property_path}")
+                else:
+                    print(f"[DEV] _read_battery_property({property_name}): Failed to read from {property_path}")
+
+            return value
+
+        def _read_battery_int(self, property_name: str) -> Optional[int]:
+            """
+            Read a battery property as integer
+            """
+            value = self._read_battery_property(property_name)
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except ValueError:
+                return None
+
+        def _read_battery_float(self, property_name: str) -> Optional[float]:
+            """
+            Read a battery property as float
+            """
+            value = self._read_battery_property(property_name)
+            if value is None:
+                return None
+            try:
+                return float(value)
+            except ValueError:
+                return None
 
         @property
-        def manufacturer(self) -> str:
-            """ This method will get the manufacturer name string"""
+        def manufacturer(self) -> Optional[str]:
+            """Get the battery manufacturer name"""
+            return self._read_battery_property("manufacturer")
 
         @property
         def battery_technology(self) -> str:
-            """ This method will get the battery technology string name"""
+            """Get the battery technology (Li-ion, Li-poly, etc.)"""
+            technology: str = "Lithium-Ion" if self._read_battery_property("technology") != "Unkown" else \
+                    self._read_battery_property("technology")
 
-        def cycle_count(self) -> str:
-            """ This method will get the battery cycle count"""
+            if technology is not None:
+                if self.dev_mode:
+                    print(f"[DEV] battery_technology: Using original value '{technology}'")
+                return technology
 
-        def design_capacity(self) -> int:
-            """ This method will get the battery design capacity"""
+            else:
+                if self.dev_mode:
+                    print("[DEV] battery_technology: Using fallback value 'Lithium-ion'")
+                return "Lithium-ion"
 
+        @property
+        def cycle_count(self) -> Optional[int]:
+            """Get the battery cycle count"""
+            return self._read_battery_int("cycle_count")
+
+        def design_capacity(self) -> Optional[int]:
+            """
+            Get the battery design capacity in mWh or mAh
+
+            Returns:
+                Design capacity or None if unavailable
+            """
+            # Try energy first (mWh), then charge (mAh)
+            capacity = self._read_battery_int("energy_full_design")
+            if capacity is not None:
+                result = capacity // 1000  # Convert µWh to mWh
+                if self.dev_mode:
+                    print(f"[DEV] design_capacity: Using energy_full_design ({capacity} µWh -> {result} mWh)")
+                return result
+
+            capacity = self._read_battery_int("charge_full_design")
+            if capacity is not None:
+                result = capacity // 1000  # Convert µAh to mAh
+                if self.dev_mode:
+                    print(f"[DEV] design_capacity: Using charge_full_design fallback ({capacity} µAh -> {result} mAh)")
+                return result
+
+            if self.dev_mode:
+                print("[DEV] design_capacity: No capacity information available")
+            return None
+
+        @property
+        def battery_health(self) -> Optional[float]:
+            """
+            Calculate battery health as percentage (current_full/design_full * 100)
+
+            Returns:
+                Battery health percentage (0-100) or None if unavailable
+            """
+            # Try energy values first
+            current_full = self._read_battery_int("energy_full")
+            design_full = self._read_battery_int("energy_full_design")
+
+            if current_full is not None and design_full is not None and design_full > 0:
+                health = round((current_full / design_full) * 100, 2)
+                if self.dev_mode:
+                    print(f"[DEV] battery_health: Using energy values ({current_full}/{design_full} = {health}%)")
+                return health
+
+            # Fallback to charge values
+            current_full = self._read_battery_int("charge_full")
+            design_full = self._read_battery_int("charge_full_design")
+
+            if current_full is not None and design_full is not None and design_full > 0:
+                health = round((current_full / design_full) * 100, 2)
+                if self.dev_mode:
+                    print(
+                        f"[DEV] battery_health: Using charge values fallback ({current_full}/{design_full} = {health}%)")
+                return health
+
+            if self.dev_mode:
+                print("[DEV] battery_health: No health information available")
+            return 0
+
+        @property
         def battery_percent(self) -> Optional[int]:
-            """ This method will get the battery charging percentage
+            """
+            Get the battery charging percentage
 
             Returns:
                 Integer percentage (0-100) or None if unavailable
             """
+            return self._read_battery_int("capacity")
 
         def is_plugged(self) -> Optional[bool]:
-            """ This method will check if the device is plugged into AC power
+            """
+            Check if the device is plugged into AC power
 
             Returns:
                 True if plugged in, False if on battery, None on error
             """
+            # Check AC adapter status
+            for i, ac_path in enumerate(self.ac_adapter_paths):
+                online_file = os.path.join(ac_path, "online")
+                online_status = self._read_file(online_file)
+                if online_status == "1":
+                    if self.dev_mode:
+                        print(f"[DEV] is_plugged: AC adapter {i} online - using original method")
+                    return True
+
+            # Fallback: check battery status
+            status = self._read_battery_property("status")
+            if status:
+                is_plugged = status.lower() in ["charging", "full"]
+                if self.dev_mode:
+                    print(f"[DEV] is_plugged: Using battery status fallback (status='{status}', plugged={is_plugged})")
+                return is_plugged
+
+            if self.dev_mode:
+                print("[DEV] is_plugged: No power information available")
+            return None
 
         def remaining_capacity(self) -> Optional[int]:
-            """ This method will get remaining battery capacity in mWh"""
-
-        def charge_rate(self) -> Optional[int]:
-            """ This method will get the current charge/discharge rate in mW
+            """
+            Get remaining battery capacity in mWh or mAh
 
             Returns:
-                Integer rate in mW (positive when charging, negative when discharging)
-                or None on error
+                Remaining capacity or None if unavailable
             """
+            # Try energy first (mWh)
+            capacity = self._read_battery_int("energy_now")
+            if capacity is not None:
+                result = capacity // 1000  # Convert µWh to mWh
+                if self.dev_mode:
+                    print(f"[DEV] remaining_capacity: Using energy_now ({capacity} µWh -> {result} mWh)")
+                return result
+
+            # Fallback to charge (mAh)
+            capacity = self._read_battery_int("charge_now")
+            if capacity is not None:
+                result = capacity // 1000  # Convert µAh to mAh
+                if self.dev_mode:
+                    print(f"[DEV] remaining_capacity: Using charge_now fallback ({capacity} µAh -> {result} mAh)")
+                return result
+
+            if self.dev_mode:
+                print("[DEV] remaining_capacity: No capacity information available")
+            return None
+
+        def charge_rate(self) -> Optional[int]:
+            """
+            Get the current battery charge or discharge rate in milliwatts (mW).
+
+            Returns:
+                int: Charge rate in mW (positive for charging, negative for discharging),
+                     or None if unavailable.
+            """
+
+            def signed_power(value_uw: int, status: Optional[str]) -> int:
+                """Convert µW to mW and apply sign based on charging status."""
+                mw = abs(value_uw) // 1000
+                if status and status.lower() == "discharging":
+                    return -mw
+                return mw
+
+            status = self._read_battery_property("status")
+
+            # Primary method: power_now (in µW)
+            power_uw = self._read_battery_int("power_now")
+            if power_uw is not None:
+                result = signed_power(power_uw, status)
+                if self.dev_mode:
+                    print(f"[DEV] charge_rate: Using power_now ({power_uw} µW -> {result} mW, status='{status}')")
+                return result
+
+            # Fallback method: current_now (µA) * voltage_now (µV)
+            current_ua = self._read_battery_int("current_now")
+            voltage_uv = self._read_battery_int("voltage_now")
+
+            if current_ua is not None and voltage_uv is not None:
+                power_uw = abs(current_ua) * voltage_uv  # Still in µW
+                result = signed_power(power_uw, status) // 1000  # Convert to mW
+                if self.dev_mode:
+                    print(f"[DEV] charge_rate: Fallback using current * voltage "
+                          f"({current_ua} µA * {voltage_uv} µV = {power_uw} µW -> {result} mW, status='{status}')")
+                return result
+
+            if self.dev_mode:
+                print("[DEV] charge_rate: No power data available")
+            return None
 
         def is_fast_charge(self) -> Optional[bool]:
-            """ This method will check if the battery is Fast charging
-
-            Return:
-                True if charge fast, False if charges slow, None if the device not charging or error
-
             """
+            Check if the battery is fast charging
+
+            Returns:
+                True if fast charging, False if slow charging,
+                None if not charging or error
+            """
+            if not self.is_plugged():
+                return False
+
+            status = self._read_battery_property("status")
+            if not status or status.lower() != "charging":
+                return False
+
+            charge_rate = self.charge_rate()
+            if charge_rate is None or charge_rate <= 0:
+                return False
+
+            # Consider fast charging if rate > 15W (arbitrary threshold)
+            # You may want to adjust this based on your device specifications
+            return charge_rate > _fast_charge_rate  # 15W in mW
 
         def battery_voltage(self) -> Optional[float]:
-            """ This method will get the battery voltage"""
+            """
+            Get the current battery voltage in Volts
+
+            Returns:
+                Voltage in Volts or None if unavailable
+            """
+            voltage_uv = self._read_battery_int("voltage_now")
+            if voltage_uv is not None:
+                return voltage_uv / 1000000.0  # Convert µV to V
+
+            # Fallback estimate the voltage
+            return self._estimate_battery_voltage()
 
         def battery_temperature(self) -> Optional[float]:
-            """ This method will get the battery sensor thermal reads"""
+            """
+            Get the battery temperature in Celsius
+
+            Returns:
+                Temperature in Celsius or None if unavailable
+            """
+            temp = self._read_battery_int("temp")
+            if temp is not None:
+                return temp / 10.0  # Convert from tenths of degrees
+
+            # Fallback
+            return None
+
+        # @property
+        # def battery_status(self) -> Optional[str]:
+        #     """
+        #     Get the current battery status
+        #
+        #     Returns:
+        #         Status string (Charging, Discharging, Full, etc.) or None
+        #     """
+        #     return self._read_battery_property("status")
 
 
 else:

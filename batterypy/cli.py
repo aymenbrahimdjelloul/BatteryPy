@@ -110,7 +110,7 @@ class BatteryCLI:
         """Parse command line arguments"""
 
         parser = argparse.ArgumentParser(
-            description=f"{caption} - Battery Information Monitoring Tool",
+            description=f"{batterypy.caption} - Battery Information Monitoring Tool",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         )
 
@@ -144,12 +144,6 @@ class BatteryCLI:
             "-v", "--version",
             action="store_true",
             help="Show application version"
-        )
-
-        parser.add_argument(
-            "-m", "--minimal",
-            action="store_true",
-            help="Display minimal information"
         )
 
         parser.add_argument(
@@ -248,7 +242,7 @@ class BatteryCLI:
 
         print(f""
               f"\n{Colors.BOLD}{Colors.CYAN}"
-              f"{self._center_text(f'{caption} - Developed by {batterypy.author}')}\n"
+              f"{self._center_text(f'{batterypy.caption} - Developed by {batterypy.author}')}\n"
               f"{self._center_text(f'visit : {batterypy.website}')}\n")
 
         print(f"{Colors.BLUE}{Colors.BOLD}{'─' * self.terminal_width}{Colors.END}\n")
@@ -281,27 +275,25 @@ class BatteryCLI:
         info = self.battery_info
 
         # Display additional information if not in minimal mode
-        if not self.args.minimal:
-            # print(f"\n{Colors.UNDERLINE}{Colors.BOLD}Additional Information:{Colors.END}")
 
-            # Sort keys for consistent display
-            sorted_keys = sorted([k for k in info.keys()
-                                  if k not in ["level", "health", "is_charging", "time_remaining"]])
+        # Sort keys for consistent display
+        sorted_keys = sorted([k for k in info.keys()
+                              if k not in ["level", "health", "is_charging", "time_remaining"]])
 
-            for key in sorted_keys:
+        for key in sorted_keys:
 
-                label: str = key.replace('_', ' ').title()
-                value: str = info[key]
+            label: str = key.replace('_', ' ').title()
+            value: str = info[key]
 
-                if value is bool:
-                    print("work")
-                    # Check for booleans
-                    if value == "True":
-                        value = "Yes"
-                    elif value == "False":
-                        value = "No"
+            if value is bool:
+                print("work")
+                # Check for booleans
+                if value == "True":
+                    value = "Yes"
+                elif value == "False":
+                    value = "No"
 
-                print(f"{self._format_info_line(label, value)}")
+            print(f"{self._format_info_line(label, value)}")
 
         # Bottom information line
         print(f"\n{Colors.BLUE}{Colors.BOLD}{'─' * self.terminal_width}{Colors.END}")
@@ -496,8 +488,8 @@ class BatteryCLI:
             elif fmt == "json":
                 filepath = os.path.join(self.args.output_dir, f"battery_report_{timestamp}.json")
                 report_data: dict = {
-                    "generated_by": f"{batterypy.caption} v{batterypy.version}",
-                    "batterypy_version": batterypy.VERSION,
+                    "generated_by": f"{batterypy.caption}",
+                    "batterypy_version": batterypy.version,
                     "timestamp": datetime.datetime.now().isoformat(),
                     "battery_info": self.battery_info
                 }
