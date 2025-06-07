@@ -12,7 +12,6 @@ License : MIT
 
 # IMPORTS
 import os
-import re
 import sys
 import time
 import ctypes
@@ -36,8 +35,8 @@ _SUPPORTED_PLATFORMS: tuple[str, str] = ("Windows", "Linux")
 # Define current system
 platform: str = system()
 
-# Set the fast charge rate at 30 Watts
-_fast_charge_threshold: int = 20000
+# Set the fast charge rate at 20 Watts
+_fast_charge_threshold: int = 20
 
 
 class BatteryPyException(BaseException):
@@ -68,12 +67,13 @@ def _has_battery() -> bool:
         bool: True if a battery is present, False otherwise.
     """
     try:
-        platform = sys.platform
+        _platform: str = sys.platform
 
         # --- Windows ---
-        if platform == "win32":
+        if _platform == "win32":
+
             class SYSTEM_POWER_STATUS(ctypes.Structure):
-                _fields_ = [
+                _fields_: list[tuple] = [
                     ('ACLineStatus', ctypes.c_byte),
                     ('BatteryFlag', ctypes.c_byte),
                     ('BatteryLifePercent', ctypes.c_byte),
@@ -85,15 +85,16 @@ def _has_battery() -> bool:
             status = SYSTEM_POWER_STATUS()
             if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
                 return False
+
             # BatteryFlag bit 128 means no battery
             if status.BatteryFlag & 128:
                 return False
             return True
 
         # --- Linux ---
-        elif platform.startswith("linux"):
+        elif _platform.startswith("linux"):
             # Check for battery presence in power_supply directory
-            battery_paths = [
+            battery_paths: list[str] = [
                 "/sys/class/power_supply/BAT0",
                 "/sys/class/power_supply/BAT1",
                 "/sys/class/power_supply/battery",
@@ -101,30 +102,35 @@ def _has_battery() -> bool:
             for path in battery_paths:
                 if os.path.exists(path):
                     # Also check if 'present' file exists and says '1'
-                    present_path = os.path.join(path, "present")
+                    present_path: str = os.path.join(path, "present")
+
                     if os.path.exists(present_path):
                         try:
                             with open(present_path) as f:
                                 return f.read(1) == "1"
                         except OSError:
                             return True  # If we can't read, assume present
+
                     else:
                         return True  # No 'present' file, but battery dir exists
+
             return False
 
         # --- macOS ---
-        elif platform == "darwin":
+        elif _platform == "darwin":
             try:
-                output = subprocess.check_output(
+                output: str = subprocess.check_output(
                     ["pmset", "-g", "batt"],
                     timeout=3,
                     text=True
                 ).lower()
+
                 # If pmset returns battery info, battery exists
                 if "no battery" in output:
                     return False
                 if "battery" in output:
                     return True
+
             except Exception:
                 return False
             return False
@@ -145,7 +151,7 @@ class _BatteryPy(ABC):
     operating system or implementation details.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the base battery class."""
         self._report_path: Optional[str] = None
 
@@ -221,19 +227,17 @@ class _BatteryPy(ABC):
     def get_result(self) -> Dict[str, Any]:
         """Collect all battery information into a comprehensive dictionary.
 
-        Args:
-            include_raw_data: Whether to include raw numerical values alongside formatted strings
-
         Returns:
             Dictionary with all available battery information
         """
 
+
         # Build the formatted result dictionary
         data: dict[str, Any] = {
-            'battery_percentage': self._format_percentage(self.battery_percent) or "n/a",
+            'battery_percent': self._format_percentage(self.battery_percent),
             'power_status': self._format_power_status(self.is_plugged()),
             'design_capacity': self._format_capacity(self.design_capacity),
-            'charge_rate': self._format_charge_rate(self.charge_rate()),
+            'charge_rate': self.charge_rate(),
             'fast_charge': self.is_fast_charge() or "n/a",
             'manufacturer': self.manufacturer or "n/a",
             'technology': self.battery_technology or "n/a",
@@ -248,16 +252,17 @@ class _BatteryPy(ABC):
 
     def _estimate_battery_voltage(self) -> Optional[float]:
         """Estimate voltage based on battery chemistry from PowerShell."""
+
         try:
-            cmd = [
+            cmd: list[str] = [
                 'powershell.exe', '-NoProfile', '-Command',
                 "(Get-WmiObject Win32_Battery).Chemistry"
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
+            resul = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
                                     creationflags=subprocess.CREATE_NO_WINDOW)
 
             if result.returncode == 0 and result.stdout.strip():
-                chemistry = int(result.stdout.strip())
+                chemistry: int = int(result.stdout.strip())
 
                 # Battery chemistry voltage mapping
                 voltage_map: dict[int, float] = {
@@ -310,8 +315,8 @@ class _BatteryPy(ABC):
         """Format charge/discharge rate in mW with charging direction."""
         if rate is None or rate == 0:
             return "n/a"
-        direction = "Charging" if rate > 0 else "Discharging"
-        return f"{abs(rate):,} mW ({direction})"
+        direction: str = "Charging" if rate > 0 else "Discharging"
+        return f"{abs(rate)} Watts ({direction})"
 
     @staticmethod
     def _format_health(health: Optional[float]) -> str:
@@ -334,6 +339,7 @@ class _BatteryPy(ABC):
 if platform == "Windows":
 
     # WINDOWS IMPORTS
+    import re
     import winreg
     import ctypes
     import subprocess
@@ -497,7 +503,7 @@ if platform == "Windows":
             return self._battery_report.battery_full_capacity()
 
         @property
-        def battery_percent(self) -> int:
+        def battery_percent(self) -> Optional[int]:
             """Get current battery charge percentage.
 
             Returns:
@@ -533,60 +539,53 @@ if platform == "Windows":
                 return 0
             return state.RemainingCapacity
 
-        def charge_rate(self) -> int:
-            """Get the current charge/discharge rate in mW.
+        def charge_rate(self, as_int: bool = False) -> str | int:
+            """
+            Get the current charge/discharge rate in Watts.
+
+            Args:
+                as_int (bool): If True, return raw integer rate in Watts.
+                                      If False, return formatted string.
 
             Returns:
-                Integer rate in mW (positive when charging, negative when discharging)
-                Returns 0 if unavailable
+                Charge/discharge rate in Watts:
+                    - Positive when charging
+                    - Negative when discharging
+                    - 0 if unavailable
+                    Returned as string or int depending on `as_int`.
             """
             state = self._get_battery_state()
             if not state or not state.BatteryPresent:
-                return 0
+                return 0 if as_int else self._format_charge_rate(0)
 
             try:
-                rate = int(state.Rate)
+                rate_mw = int(state.Rate)
+                rate_w = round(rate_mw / 1000)  # Convert to Watts
 
-                # Normalize rate based on charging/discharging status
-                if state.Discharging and rate > 0:
-                    return -rate  # Negative for discharging
-                elif state.Charging and rate < 0:
-                    return abs(rate)  # Positive for charging
+                if state.Discharging and rate_w > 0:
+                    rate_w = -abs(rate_w)
+                elif state.Charging and rate_w < 0:
+                    rate_w = abs(rate_w)
                 elif state.Charging:
-                    return rate  # Already positive
+                    rate_w = abs(rate_w)
                 else:
-                    return -abs(rate) if rate != 0 else 0  # Negative for discharging
+                    rate_w = -abs(rate_w) if rate_w != 0 else 0
+
+                return rate_w if as_int else self._format_charge_rate(rate_w)
 
             except (ValueError, OverflowError):
-                return 0
+                return 0 if as_int else self._format_charge_rate(0)
 
-        def is_charging(self) -> bool:
-            """Check if the battery is currently charging.
-
-            Returns:
-                True if charging, False otherwise
-            """
-            state = self._get_battery_state()
-            return bool(state.Charging) if state and state.BatteryPresent else False
-
-        def is_discharging(self) -> bool:
-            """Check if battery is currently discharging.
-
-            Returns:
-                True if discharging, False otherwise
-            """
-            state = self._get_battery_state()
-            return bool(state.Discharging) if state and state.BatteryPresent else False
-
-        def is_fast_charge(self) -> bool:
+        def is_fast_charge(self) -> Optional[bool]:
             """Check if battery is fast charging.
 
             Returns:
                 True if the charging rate exceeds the fast charge threshold
             """
-            if not self.is_charging():
-                return False
-            return abs(self.charge_rate()) > self._FAST_CHARGE_THRESHOLD_MW
+            if not self.is_plugged():
+                return None
+
+            return abs(self.charge_rate(as_int=True)) > _fast_charge_threshold
 
         @property
         def battery_health(self) -> float:
@@ -1358,10 +1357,10 @@ elif platform == "Linux":
         """
 
         # Linux battery sysfs paths
-        POWER_SUPPLY_PATH = "/sys/class/power_supply"
+        POWER_SUPPLY_PATH: str = "/sys/class/power_supply"
 
         # Battery property mappings
-        BATTERY_PROPERTIES = {
+        BATTERY_PROPERTIES: dict[str, str] = {
             "manufacturer": "manufacturer",
             "technology": "technology",
             "cycle_count": "cycle_count",
@@ -1385,9 +1384,10 @@ elif platform == "Linux":
         def __init__(self, dev_mode: bool = False) -> None:
             super().__init__()
 
+            # Declare constants
             self.dev_mode = dev_mode
             self._battery_path = None
-            self._ac_adapter_paths = []
+            self._ac_adapter_paths: list = []
 
             # Check if Battery exists
             if not _has_battery():
@@ -1406,8 +1406,8 @@ elif platform == "Linux":
             if not os.path.exists(self.POWER_SUPPLY_PATH):
                 return
 
-            power_supplies = os.listdir(self.POWER_SUPPLY_PATH)
-            batteries = []
+            power_supplies: list = os.listdir(self.POWER_SUPPLY_PATH)
+            batteries: list = []
 
             for supply in power_supplies:
                 supply_path = os.path.join(self.POWER_SUPPLY_PATH, supply)
@@ -1692,7 +1692,7 @@ elif platform == "Linux":
                 print("[DEV] charge_rate: No power data available")
             return None
 
-        def is_fast_charge(self) -> Optional[bool]:
+        def is_fast_charge(self) -> Optional[bool] | str:
             """
             Check if the battery is fast charging
 
@@ -1701,7 +1701,7 @@ elif platform == "Linux":
                 None if not charging or error
             """
             if not self.is_plugged():
-                return False
+                return None
 
             status = self._read_battery_property("status")
             if not status or status.lower() != "charging":
@@ -1711,9 +1711,9 @@ elif platform == "Linux":
             if charge_rate is None or charge_rate <= 0:
                 return False
 
-            # Consider fast charging if rate > 15W (arbitrary threshold)
+            # Consider fast charging if rate > 20W (arbitrary threshold)
             # You may want to adjust this based on your device specifications
-            return charge_rate > _fast_charge_threshold  # 15W in mW
+            return charge_rate > _fast_charge_threshold
 
         def battery_voltage(self) -> Optional[float]:
             """
