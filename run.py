@@ -7,8 +7,8 @@ license : MIT License
 """
 
 # IMPORTS
-from batterypy.app import main
+from batterypy.app import __main__
 
 
 if __name__ == "__main__":
-    main()
+    __main__()
