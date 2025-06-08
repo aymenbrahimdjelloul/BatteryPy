@@ -1,7 +1,7 @@
 """
 @author : Aymen Brahim Djelloul
-version : 1.3
-date : 04.04.2025
+version : 1.4
+date : 08.06.2025
 license : MIT License
 
 """
