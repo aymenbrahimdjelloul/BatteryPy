@@ -94,7 +94,6 @@ class BatteryPyInterface:
 
         # Check for missing dependencies
         if miss_dependencies:
-            print("work")
             messagebox.showerror(
                 "Missing Libraries",
                 "One or more required components are missing.\n\n"
@@ -114,12 +113,10 @@ class BatteryPyInterface:
         except Exception as e:
             print(f"Font configuration warning: {e}")
 
-
-
-        # Check for updates
         # Create Updater object
         updater = Updater()
 
+        # Check for updates
         if updater.is_update():
             update_data = updater.get_update_info()
 
