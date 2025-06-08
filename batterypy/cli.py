@@ -505,7 +505,7 @@ class BatteryCLI:
                 print(f"  {Colors.GREEN}✓ {report_type}: {path}{Colors.END}")
 
 
-def main() -> int:
+def __main__() -> int:
     """Main function to run the CLI tool"""
 
     try:
@@ -527,4 +527,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(0)
