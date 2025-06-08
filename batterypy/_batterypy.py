@@ -4,7 +4,7 @@ copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
 @author : Aymen Brahim Djelloul
-version : 1.3
+version : 1.4
 date    : 03.06.2025
 License : MIT
 
@@ -25,7 +25,7 @@ from abc import ABC, abstractmethod
 
 # Declare software constants
 author: str = "Aymen Brahim Djelloul"
-version: str = "1.3"
+version: str = "1.4"
 caption: str = f"BatteryPy - v{version}"
 website: str = "https://aymenbrahimdjelloul.github.io/BatteryPy"
 
@@ -258,7 +258,7 @@ class _BatteryPy(ABC):
                 'powershell.exe', '-NoProfile', '-Command',
                 "(Get-WmiObject Win32_Battery).Chemistry"
             ]
-            resul = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
                                     creationflags=subprocess.CREATE_NO_WINDOW)
 
             if result.returncode == 0 and result.stdout.strip():
@@ -331,7 +331,7 @@ class _BatteryPy(ABC):
     @staticmethod
     def _format_temperature(temperature: Optional[float]) -> str:
         """Format battery temperature in Celsius with one decimal place."""
-        return f"{temperature:.1f}°C" if temperature is not None else "n/a"
+        return f"{temperature:.1f}° C"
 
 
 
@@ -395,12 +395,11 @@ if platform == "Windows":
         """
 
         # Class constants
-        _FAST_CHARGE_THRESHOLD_MW = 15000  # 15 W threshold for fast charging
         _CACHE_DURATION_SECONDS = 2  # Cache API calls for 2 seconds
         _POWER_INFO_BATTERY_STATE = 5  # Windows API constant
 
         # Define commands constants
-        powershell_cmd_battery: list = [
+        powershell_cmd_battery: list[str] = [
             'powershell.exe', '-NoProfile', '-Command',
             "(Get-WmiObject Win32_Battery).DesignVoltage"
         ]
@@ -418,8 +417,8 @@ if platform == "Windows":
                 raise BatteryPyException("BatteryPy cannot detect any battery")
 
             self.dev_mode = dev_mode
-            self._last_api_call = 0
-            self._cached_state = None
+            self._last_api_call: int = 0
+            self._cached_state: bool = None
 
             # Initialize battery report (static information)
             self._battery_report = _BatteryHtmlReport(dev_mode=self.dev_mode)
@@ -446,7 +445,7 @@ if platform == "Windows":
             if not self._power_prof:
                 return None
 
-            current_time = time.time()
+            current_time: float = time.time()
 
             # Return cached state if recent and caching enabled
             if (use_cache and self._cached_state and
@@ -785,41 +784,35 @@ if platform == "Windows":
         def battery_temperature(self) -> Optional[float]:
             """Get battery temperature using only Windows built-in APIs and standard library.
 
-            Attempts multiple methods without external dependencies:
-            1. PowerShell WMI thermal queries
-            2. Windows Registry thermal information
-            3. WMI temperature sensors
-            4. ACPI thermal zone queries
-            5. Hardware monitoring via Windows APIs
-
             Returns:
                 float: Battery temperature in Celsius, or None if unavailable
             """
 
             # Method 1: PowerShell WMI Battery Temperature (direct)
-            try:
-                cmd = [
-                    'powershell.exe', '-NoProfile', '-Command',
-                    "(Get-WmiObject Win32_Battery | Where-Object {$_.Temperature -ne $null}).Temperature"
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
-                                        creationflags=subprocess.CREATE_NO_WINDOW)
+            # try:
+            #     cmd = [
+            #         'powershell.exe', '-NoProfile', '-Command',
+            #         "(Get-WmiObject Win32_Battery | Where-Object {$_.Temperature -ne $null}).Temperature"
+            #     ]
+            #     result = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
+            #                             creationflags=subprocess.CREATE_NO_WINDOW)
+            #
+            #     if result.returncode == 0 and result.stdout.strip():
+            #         # The Temperature in WMI is typically in tenths of Kelvin
+            #         temp_raw = float(result.stdout.strip())
+            #         if temp_raw > 1000:  # Likely in tenths of Kelvin
+            #             temp_celsius = (temp_raw / 10.0) - 273.15
+            #         else:  # Already in Celsius or other format
+            #             temp_celsius = temp_raw
+            #
+            #         if -40 <= temp_celsius <= 100:  # Reasonable battery temperature range
+            #             if self.dev_mode:
+            #                 print(f"[WinBattery] Battery temperature: {temp_celsius:.1f}°C")
+            #             return temp_celsius
+            # except Exception as e:
+            #     if self.dev_mode:
+            #         print(f"[WinBattery] PowerShell battery temp failed: {e}")
 
-                if result.returncode == 0 and result.stdout.strip():
-                    # The Temperature in WMI is typically in tenths of Kelvin
-                    temp_raw = float(result.stdout.strip())
-                    if temp_raw > 1000:  # Likely in tenths of Kelvin
-                        temp_celsius = (temp_raw / 10.0) - 273.15
-                    else:  # Already in Celsius or other format
-                        temp_celsius = temp_raw
-
-                    if -40 <= temp_celsius <= 100:  # Reasonable battery temperature range
-                        if self.dev_mode:
-                            print(f"[WinBattery] Battery temperature: {temp_celsius:.1f}°C")
-                        return temp_celsius
-            except Exception as e:
-                if self.dev_mode:
-                    print(f"[WinBattery] PowerShell battery temp failed: {e}")
 
             # Method 2: Thermal Zone queries (system temperature)
             try:
@@ -830,24 +823,6 @@ if platform == "Windows":
                 if self.dev_mode:
                     print(f"[WinBattery] Thermal zone method failed: {e}")
 
-            # Method 3: WMI Temperature Sensors
-            try:
-                temp = self._get_wmi_temperature_sensors()
-                if temp:
-                    return temp
-            except Exception as e:
-                if self.dev_mode:
-                    print(f"[WinBattery] WMI sensors method failed: {e}")
-
-            # Method 4: Registry-based temperature detection
-            try:
-                temp = self._get_temperature_from_registry()
-                if temp:
-                    return temp
-            except Exception as e:
-                if self.dev_mode:
-                    print(f"[WinBattery] Registry method failed: {e}")
-
             # Method 5: ACPI thermal information
             try:
                 temp = self._get_acpi_temperature()
@@ -856,15 +831,6 @@ if platform == "Windows":
             except Exception as e:
                 if self.dev_mode:
                     print(f"[WinBattery] ACPI method failed: {e}")
-
-            # Method 6: Hardware monitoring via Windows Performance Counters
-            try:
-                temp = self._get_performance_counter_temperature()
-                if temp:
-                    return temp
-            except Exception as e:
-                if self.dev_mode:
-                    print(f"[WinBattery] Performance counter method failed: {e}")
 
             if self.dev_mode:
                 print("[WinBattery] All temperature detection methods failed")
@@ -875,7 +841,7 @@ if platform == "Windows":
             """Get temperature from Windows thermal zones."""
             try:
                 # Query thermal zones
-                cmd = [
+                cmd: list[str] = [
                     'powershell.exe', '-NoProfile', '-Command',
                     "Get-WmiObject -Namespace 'root/WMI' -Class MSAcpi_ThermalZoneTemperature | Select-Object -ExpandProperty CurrentTemperature"
                 ]
@@ -1030,6 +996,7 @@ if platform == "Windows":
 
         def _get_acpi_temperature(self) -> Optional[float]:
             """Get temperature from ACPI thermal management."""
+
             try:
                 # WMIC ACPI thermal zone query
                 cmd = ['wmic', '/namespace:\\\\root\\wmi', 'path', 'MSAcpi_ThermalZoneTemperature', 'get',
@@ -1138,6 +1105,7 @@ if platform == "Windows":
         _CACHE_REPORT_PATH: str = Path(".cache") / _CACHE_FILENAME
         _REPORT_COMMAND: str = ["powercfg", "/batteryreport"]
         _COMMAND_TIMEOUT: int = 10
+        _CREATE_NO_WINDOW = 0x08000000
 
         # Compiled regex patterns for better performance
         _SEARCH_PATTERNS: dict = {
@@ -1214,7 +1182,8 @@ if platform == "Windows":
                     capture_output=True,
                     text=True,
                     check=True,
-                    timeout=self._COMMAND_TIMEOUT
+                    timeout=self._COMMAND_TIMEOUT,
+                    creationflags=self._CREATE_NO_WINDOW,
                 )
 
                 # Extract the report file path
@@ -1422,15 +1391,15 @@ elif platform == "Linux":
                         self._ac_adapter_paths.append(supply_path)
 
             # Select battery
-            if preferred_battery:
-                preferred_path = os.path.join(self.POWER_SUPPLY_PATH, preferred_battery)
-                if preferred_path in batteries:
-                    self._battery_path = preferred_path
-                else:
-                    raise ValueError(f"Battery '{preferred_battery}' not found")
-            elif batteries:
+            # if preferred_battery:
+            #     preferred_path = os.path.join(self.POWER_SUPPLY_PATH, preferred_battery)
+            #     if preferred_path in batteries:
+            #         self._battery_path = preferred_path
+            #     else:
+            #         raise ValueError(f"Battery '{preferred_battery}' not found")
+            # elif batteries:
                 # Use first available battery
-                self._battery_path = batteries[0]
+            self._battery_path = batteries[0]
 
         @staticmethod
         def _read_file(file_path: str) -> Optional[str]:

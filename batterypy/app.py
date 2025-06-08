@@ -4,7 +4,7 @@ copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
 @author : Aymen Brahim Djelloul
-version : 0.1
+version : 0.2
 date : 06.04.2025
 license : MIT License
 
@@ -14,10 +14,11 @@ license : MIT License
 # IMPORTS
 import os
 import json
+import sys
 import threading
 import webbrowser
 import platform
-import time
+import ctypes
 import tkinter as tk
 from pathlib import Path
 from tkinter import ttk, messagebox, filedialog, PhotoImage, font
@@ -33,6 +34,31 @@ try:
 
 except ImportError:
     miss_dependencies: bool = True
+
+
+def _run_as_admin() -> Optional[Any]:
+    """
+    Relaunch the script with admin privileges if not already running as admin.
+    Returns True if already admin or successfully relaunched, False otherwise.
+    """
+    try:
+        is_admin = ctypes.windll.shell32.IsUserAnAdmin()
+    except Exception:
+        is_admin = False
+
+    if is_admin:
+        return True  # Already running as admin
+    else:
+        # Relaunch with admin privileges
+        try:
+            script = os.path.abspath(sys.argv[0])
+            params = " ".join([f'"{arg}"' for arg in sys.argv[1:]])
+            ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", sys.executable, f'"{script}" {params}', None, 1)
+            sys.exit(0)
+        except Exception as e:
+            print(f"Failed to relaunch as admin: {e}")
+            return False
 
 
 class BatteryPyInterface:
@@ -66,6 +92,18 @@ class BatteryPyInterface:
         # Set window icon
         self._set_icon(self.root)
 
+        # Check for missing dependencies
+        if miss_dependencies:
+            print("work")
+            messagebox.showerror(
+                "Missing Libraries",
+                "One or more required components are missing.\n\n"
+                "This application cannot start without the necessary libraries.\n"
+                "Please ensure all dependencies are properly installed and try again."
+            )
+            self.root.destroy()
+            return
+
         # Configure enhanced font for messagebox
         try:
             default_font = font.nametofont("TkDefaultFont")
@@ -76,19 +114,36 @@ class BatteryPyInterface:
         except Exception as e:
             print(f"Font configuration warning: {e}")
 
-        # Check for missing dependencies
-        if miss_dependencies:
-            messagebox.showerror(
-                "Missing Libraries",
-                "One or more required components are missing.\n\n"
-                "This application cannot start without the necessary libraries.\n"
-                "Please ensure all dependencies are properly installed and try again."
-            )
-            self.root.destroy()
-            return
 
-        # Handle updates (commented out to avoid errors)
-        # self._handle_updates()
+
+        # Check for updates
+        # Create Updater object
+        updater = Updater()
+
+        if updater.is_update():
+            update_data = updater.get_update_info()
+
+            version: str = update_data.get("version", "N/A")
+            size: str = update_data.get("download_size_mb", "Unknown")
+            description: str = update_data.get("description", "No description provided.")
+            download_url: str = update_data.get("download_url")
+
+            # Show message box
+            root = tk.Tk()
+            root.withdraw()  # Hide the root window
+
+            message = (
+                f"A new version of BatteryPy is available!\n\n"
+                f"Version: {version}\n"
+                f"Size: {size}\n\n"
+                f"Description:\n{description}\n\n"
+                f"Would you like to open the update page?"
+            )
+
+            if messagebox.askyesno("Update Available", message):
+                webbrowser.open(download_url)
+
+            root.destroy()
 
         # Initialize battery and UI components
         self._initialize_battery()
@@ -128,17 +183,28 @@ class BatteryPyInterface:
 
     @staticmethod
     def _set_icon(parent: tk.Tk) -> None:
-        """Set window icon."""
+        """Set window icon on Windows with fallback to generic Windows-style icon."""
 
         try:
-            icon_path: str = "icon.png"
-            if os.path.exists(icon_path):
-                icon = PhotoImage(file=icon_path)
+            icon_png = "icon.png"
+            if os.path.exists(icon_png):
+                icon = PhotoImage(file=icon_png)
                 parent.iconphoto(True, icon)
+                return
             else:
-                print(f"Warning: Icon file not found at {icon_path}")
+                print(f"Warning: Icon file not found at {icon_png}")
         except Exception as e:
-            print(f"Warning: Could not load icon: {e}")
+            print(f"Warning: Could not load PNG icon: {e}")
+
+        # Fallback: Use bundled Windows-style .ico
+        try:
+            fallback_ico = "fallback.ico"  # Must be present in your project
+            if os.path.exists(fallback_ico):
+                parent.iconbitmap(fallback_ico)
+            else:
+                print(f"Warning: fallback.ico not found.")
+        except Exception as e:
+            print(f"Warning: Could not set fallback icon: {e}")
 
     def create_ui(self) -> None:
         """Initial UI setup with optimized layout."""
@@ -798,7 +864,7 @@ class Updater:
     cache_file: Path = Path(".cache") / "update_cache.json"
     cache_expiry_hours: int = 24
 
-    def __init__(self, dev_mode: bool = False) -> None:
+    def __init__(self, dev_mode: bool = True) -> None:
 
         # Declare constants
         self.dev_mode = dev_mode
@@ -865,7 +931,7 @@ class Updater:
 
         return parsed_data
 
-    def _request_latest_release(self) -> Optional[requests.Response]:
+    def _request_latest_release(self) -> Optional:
         """Make HTTP request to GitHub API for the latest release"""
         try:
             response: Optional = self.r_session.get(
@@ -902,7 +968,7 @@ class Updater:
                 print(f"Request error: {e}")
             return None
 
-    def _parse_latest_release(self, response: requests.Response) -> Optional[Dict[str, Any]]:
+    def _parse_latest_release(self, response: Optional) -> Optional[Dict[str, Any]]:
         """Parse the GitHub latest release JSON response"""
         try:
             data: Optional = response.json()
@@ -914,8 +980,12 @@ class Updater:
             html_url: str = data.get('html_url', '')
 
             # Get download information from assets
-            assets: str = data.get('assets', [])
+            assets = data.get('assets', [])
             download_info: Optional = self._extract_download_info(assets)
+
+            if not download_info:
+                print("No valid installer asset found")
+                return None
 
             parsed_info: dict[str, str] = {
                 'version': version,
@@ -938,28 +1008,18 @@ class Updater:
             return None
 
     @staticmethod
-    def _extract_download_info(assets: list) -> Dict[str, Any]:
-        """Extract download information from release assets"""
-
-        if not assets:
-            return {
-                'size_mb': 0,
-                'download_url': '',
-                'asset_name': 'No assets available'
-            }
-
-        # Get the first asset (you might want to filter by platform/type)
-        main_asset = assets[0]
-
-        # Convert size from bytes to MB
-        size_bytes = main_asset.get('size', 0)
-        size_mb = round(size_bytes / (1024 * 1024), 2) if size_bytes > 0 else 0
-
-        return {
-            'size_mb': size_mb,
-            'download_url': main_asset.get('browser_download_url', ''),
-            'asset_name': main_asset.get('name', 'Unknown')
-        }
+    def _extract_download_info(assets: list) -> Optional[Dict[str, Any]]:
+        """Extract download information from release assets, selecting the asset ending with 'installer'"""
+        for asset in assets:
+            name = asset.get('name', '').lower()
+            if name.endswith('installer.exe'):
+                size_bytes = asset.get('size', 0)
+                return {
+                    'asset_name': asset.get('name', ''),
+                    'download_url': asset.get('browser_download_url', ''),
+                    'size_mb': f"{size_bytes / (1024 * 1024):.2f} MB"
+                }
+        return None
 
     @staticmethod
     def _compare_versions(current: str, latest: str) -> bool:
@@ -1002,12 +1062,18 @@ class Updater:
             return None
 
     def _save_to_cache(self, data: Dict[str, Any]) -> None:
-        """Save data to the cache file"""
+        """Save data to the cache file, creating directories if needed."""
         try:
-            with open(self.cache_file, 'w') as f:
-                json.dump(data, f, indent=2)
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+
+            # Save JSON data
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            print(f"Cache successfully saved to: {self.cache_file}")
+
         except Exception as e:
-            print(f"Failed to save cache: {e}")
+            print(f"Failed to save cache to {self.cache_file}: {e}")
 
     def clear_cache(self) -> None:
         """Clear the cache file"""
@@ -1021,9 +1087,13 @@ class Updater:
             print(f"Error clearing cache: {e}")
 
 
-def main() -> None:
+def __main__() -> None:
     """ This function will start the app"""
 
+    # Run as administrator
+    _run_as_admin()
+
+    # Run the App
     root = tk.Tk()
     BatteryPyInterface(root)
 
@@ -1031,4 +1101,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(0)
