@@ -104,8 +104,7 @@ class BatteryPyInterface:
         """Initialize battery object safely."""
         try:
             self.battery = batterypy.Battery()
-        except Exception as e:
-            print(f"Battery initialization error: {e}")
+        except BatteryPyException:
             self.battery = None
 
     def _initialize_variables(self) -> None:
@@ -169,7 +168,7 @@ class BatteryPyInterface:
             # Show no battery message
             self.status_label = ttk.Label(
                 self.info_frame,
-                text="BatteryPy is unable to detect battery on this device",
+                text="No battery detected !",
                 font=("Segoe UI", 11, "italic"),
                 foreground="red"
             )
