@@ -5,7 +5,7 @@ use of this source code is governed by MIT License that can be found on the proj
 
 @author : Aymen Brahim Djelloul
 version : 0.2
-date : 08.06.2025
+date : 06.04.2025
 license : MIT License
 
 
@@ -24,8 +24,8 @@ from pathlib import Path
 from tkinter import ttk, messagebox, filedialog, PhotoImage, font
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from batterypy import BatteryPyException
 
+from batterypy import BatteryPyException
 
 try:
     import batterypy
@@ -94,6 +94,7 @@ class BatteryPyInterface:
 
         # Check for missing dependencies
         if miss_dependencies:
+            print("work")
             messagebox.showerror(
                 "Missing Libraries",
                 "One or more required components are missing.\n\n"
@@ -113,10 +114,12 @@ class BatteryPyInterface:
         except Exception as e:
             print(f"Font configuration warning: {e}")
 
-        # Create the Updater object
-        updater = Updater()
+
 
         # Check for updates
+        # Create Updater object
+        updater = Updater()
+
         if updater.is_update():
             update_data = updater.get_update_info()
 
@@ -153,7 +156,7 @@ class BatteryPyInterface:
         self.create_ui()
 
     def _initialize_battery(self) -> None:
-        """Initialize the battery object safely."""
+        """Initialize battery object safely."""
         try:
             self.battery = batterypy.Battery()
         except BatteryPyException:
@@ -206,19 +209,19 @@ class BatteryPyInterface:
     def create_ui(self) -> None:
         """Initial UI setup with optimized layout."""
 
-        # Create the main frame
+        # Create main frame
         self.frame = ttk.Frame(self.root, padding=10)
         self.frame.pack(fill=tk.BOTH, expand=True)
 
         # Check for battery presence and create title
-        if self.battery:
-            # Create title label
-            self.title_label = ttk.Label(
-                self.frame,
-                text="BatteryPy - Check Your Battery",
-                font=("Segoe UI", 10, "bold")
-            )
-            self.title_label.pack(pady=(0, 10))
+        # if self.battery:
+        #     # Create title label
+        #     self.title_label = ttk.Label(
+        #         self.frame,
+        #         text="BatteryPy - Check Your Battery",
+        #         font=("Segoe UI", 10, "bold")
+        #     )
+        #     self.title_label.pack(pady=(0, 10))
 
         # Create info frame
         self.info_frame = ttk.LabelFrame(self.frame, text="Information", padding=15)
@@ -264,7 +267,7 @@ class BatteryPyInterface:
 
     def _load_initial_data(self) -> None:
         """Load initial battery data."""
-        # Show the loading message
+        # Show loading message
         self.status_label = ttk.Label(
             self.info_frame,
             text="Loading battery information...",
@@ -374,10 +377,11 @@ class BatteryPyInterface:
             # Get battery data
             current_data: dict[str, str] = {
                 "power_status": "Plugged in" if self.battery.is_plugged() else "On Battery",
-                "charge_rate": self.battery.charge_rate(),
-                "fast_charge": "YES" if self.battery.is_fast_charge() else "NO",
-                "battery_percent": f"{self.battery.battery_percent}%",
+                "charge_rate": f"{self.battery.charge_rate() / 1000:.0f} Watts",
+                "fast_charge": "Yes" if self.battery.is_fast_charge() else "No",
+                "battery_percent": f"{self.battery.battery_percent()}%",
                 "battery_voltage": f"{self.battery.battery_voltage()} V",
+                # "battery_temperature": f"{self.battery.battery_temperature()} C",
             }
 
             # Update display immediately
@@ -386,7 +390,7 @@ class BatteryPyInterface:
         except Exception as e:
             print(f"Update error: {e}")
 
-        # Schedule next update in 1000 ms (1 second)
+        # Schedule next update in 1000ms (1 second)
         if self.update_running:
             self.root.after(1000, self._schedule_next_update)
 
@@ -450,7 +454,7 @@ class BatteryPyInterface:
             # Apply color with fade-back effect
             if color != "black":
                 label.config(foreground=color)
-                # Reset color after 1.2 seconds (shorter than the update interval)
+                # Reset color after 1.2 seconds (shorter than update interval)
                 self.root.after(1200, lambda lbl=label: lbl.config(foreground="black"))
 
         except Exception as e:
@@ -529,7 +533,7 @@ class BatteryPyInterface:
                         else:
                             f.write(f"{key.replace('_', ' ').title()}: {value}\n")
 
-            # Show the success message
+            # Show success message
             file_size = Path(file_path).stat().st_size / 1024
             messagebox.showinfo(
                 "Success",
@@ -544,7 +548,7 @@ class BatteryPyInterface:
     def show_about(self) -> None:
         """Display about dialog with improved error handling and structure."""
         try:
-            # Create about the window
+            # Create about window
             about_window = tk.Toplevel(self.root)
             about_window.title(f"About - {getattr(batterypy, 'caption', 'BatteryPy')}")
             about_window.geometry("420x350")
@@ -560,7 +564,7 @@ class BatteryPyInterface:
                 try:
                     about_window.iconbitmap(self.icon_path)
                 except tk.TclError:
-                    pass  # Icon wasn't found, continue without it
+                    pass  # Icon not found, continue without it
 
             # Main frame with better padding
             main_frame = ttk.Frame(about_window, padding="25")
@@ -588,7 +592,7 @@ class BatteryPyInterface:
             about_window.bind('<Escape>', lambda e: about_window.destroy())
             about_window.bind('<Return>', lambda e: about_window.destroy())
 
-            # Focus on the window
+            # Focus on window
             about_window.focus_set()
 
         except Exception as e:
@@ -601,7 +605,7 @@ class BatteryPyInterface:
     def _center_window(window, parent, offset_x=0, offset_y=0) -> None:
         """Center a window relative to its parent with optional offset."""
 
-        window.update_idletasks()  # Ensure geometry is up to date
+        window.update_idletasks()  # Ensure geometry is up-to-date
 
         # Get parent geometry
         px, py = parent.winfo_rootx(), parent.winfo_rooty()
@@ -686,8 +690,7 @@ class BatteryPyInterface:
         links_frame.pack(pady=(0, 15))
 
         # Website button
-        def open_website() -> None:
-            """ This method will open website """
+        def open_website():
             try:
                 url = getattr(batterypy, 'website', 'https://github.com/aymenbrahimdjelloul/BatteryPy')
                 webbrowser.open(url)
@@ -703,8 +706,7 @@ class BatteryPyInterface:
         website_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         # GitHub button
-        def open_github() -> None:
-            """ This method will open GitHub buttons """
+        def open_github():
             try:
                 webbrowser.open("https://github.com/aymenbrahimdjelloul/BatteryPy")
             except Exception as e:
@@ -721,8 +723,7 @@ class BatteryPyInterface:
     def _create_third_party_link(self, parent, about_window) -> None:
         """Create the third-party libraries link."""
 
-        def show_third_party() -> None:
-            """ This method will show third party libraries """
+        def show_third_party():
             try:
                 self._show_third_party_dialog(about_window)
             except Exception as e:
@@ -743,8 +744,8 @@ class BatteryPyInterface:
         third_party_link.pack(pady=(0, 10))
 
     def _show_third_party_dialog(self, parent_window) -> None:
-        """Show the third-party libraries' dialog."""
-        # Create the third-party window
+        """Show the third-party libraries dialog."""
+        # Create third-party window
         tp_window = tk.Toplevel(parent_window)
         tp_window.title("Third-Party Libraries")
         tp_window.geometry("480x400")

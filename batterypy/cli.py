@@ -194,7 +194,7 @@ class BatteryCLI:
         """ This method will set title for terminal window"""
 
         try:
-            os.system(f"title {batterypy.caption}" if batterypy.platform == "Windows" else
+            os.system(f"title {batterypy.caption}" if batterypy._platform == "Windows" else
                       f'echo -ne "\033]0;{batterypy.caption}\007"')
             return None
 
