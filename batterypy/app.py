@@ -550,10 +550,10 @@ class BatteryPyInterface:
         try:
             # Create about window
             about_window = tk.Toplevel(self.root)
-            about_window.title(f"About - {getattr(batterypy, 'caption', 'BatteryPy')}")
+            about_window.title("About - BatteryPy")
             about_window.geometry("420x350")
             about_window.resizable(False, False)
-            about_window.transient(self.root)
+            # about_window.transient(self.root)
             # about_window.grab_set()
 
             # Center the window relative to parent
@@ -605,7 +605,7 @@ class BatteryPyInterface:
     def _center_window(window, parent, offset_x=0, offset_y=0) -> None:
         """Center a window relative to its parent with optional offset."""
 
-        window.update_idletasks()  # Ensure geometry is up-to-date
+        # window.update_idletasks()  # Ensure geometry is up-to-date
 
         # Get parent geometry
         px, py = parent.winfo_rootx(), parent.winfo_rooty()
