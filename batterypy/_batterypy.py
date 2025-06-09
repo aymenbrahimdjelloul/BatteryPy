@@ -31,7 +31,7 @@ caption: str = f"BatteryPy - v{version}"
 website: str = "https://aymenbrahimdjelloul.github.io/BatteryPy"
 
 # Declare supported platforms
-_SUPPORTED_PLATFORMS: tuple = ("Windows", "Linux")
+_SUPPORTED_PLATFORMS: tuple[str, str] = ("Windows", "Linux")
 
 # Define current system
 _platform: str = system()
