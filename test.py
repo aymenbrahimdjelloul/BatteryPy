@@ -1,6 +1,6 @@
 """
 @author : Aymen Brahim Djelloul
-date : 06.07.2025
+date : 09.06.2025
 License : MIT License
 
 """
@@ -13,7 +13,7 @@ from time import perf_counter
 
 
 class BatteryPyTestSuite(unittest.TestCase):
-    """Comprehensive test suite for batterypy library"""
+    """Comprehensive test suite for BatteryPy library"""
 
     @classmethod
     def setUpClass(cls):
@@ -40,7 +40,7 @@ class BatteryPyTestSuite(unittest.TestCase):
             extra_checks(value)
 
     def test_battery_percent(self):
-        value = self.battery.battery_percent
+        value = self.battery.battery_percent()
         self._assert_and_print(
             "battery_percent",
             value,
@@ -49,16 +49,16 @@ class BatteryPyTestSuite(unittest.TestCase):
         )
 
     def test_battery_health(self):
-        value = self.battery.battery_health
+        value = self.battery.battery_health()
         self._assert_and_print("battery_health", value)
         self.assertIsNotNone(value)
 
     def test_battery_technology(self):
-        value = self.battery.battery_technology
+        value = self.battery.battery_technology()
         self._assert_and_print("battery_technology", value, str)
 
     def test_cycle_count(self):
-        value = self.battery.cycle_count
+        value = self.battery.cycle_count()
         self._assert_and_print("cycle_count", value, (int, type(None)))
         if value is not None:
             self.assertGreaterEqual(value, 0)
@@ -102,16 +102,16 @@ def run_performance_test() -> None:
 
     battery = batterypy.Battery(dev_mode=False)
     methods: list[tuple] = [
-        ('battery_percent', lambda: battery.battery_percent),
-        ('battery_health', lambda: battery.battery_health),
-        ('battery_technology', lambda: battery.battery_technology),
-        ('cycle_count', lambda: battery.cycle_count),
-        ('charge_rate', lambda: battery.charge_rate()),
-        ('is_fast_charge', lambda: battery.is_fast_charge()),
-        ('is_plugged', lambda: battery.is_plugged()),
-        ('battery_voltage', lambda: battery.battery_voltage()),
-        ('battery_temperature', lambda: battery.battery_temperature()),
-        ('get_result', lambda: battery.get_result()),
+        ('battery_percent', battery.battery_percent),
+        ('battery_health', battery.battery_health),
+        ('battery_technology', battery.battery_technology),
+        ('cycle_count', battery.cycle_count),
+        ('charge_rate', battery.charge_rate),
+        ('is_fast_charge', battery.is_fast_charge),
+        ('is_plugged', battery.is_plugged),
+        ('battery_voltage', battery.battery_voltage),
+        ('battery_temperature', battery.battery_temperature),
+        ('get_result', battery.get_result),
     ]
 
     for method_name, method_call in methods:
@@ -140,16 +140,16 @@ def run_quick_test() -> None:
     battery = batterypy.Battery(dev_mode=False)
 
     tests: list[tuple] = [
-        ("Battery Percent", lambda: battery.battery_percent),
-        ("Battery Health", lambda: battery.battery_health),
-        ("Battery Technology", lambda: battery.battery_technology),
-        ("Cycle Count", lambda: battery.cycle_count),
-        ("Charge Rate", lambda: battery.charge_rate()),
-        ("Fast Charge", lambda: battery.is_fast_charge()),
-        ("Is Plugged", lambda: battery.is_plugged()),
-        ("Battery Voltage", lambda: battery.battery_voltage()),
-        ("Battery Temperature", lambda: battery.battery_temperature()),
-        ("Complete Result", lambda: battery.get_result()),
+        ("Battery Percent", battery.battery_percent),
+        ("Battery Health", battery.battery_health),
+        ("Battery Technology", battery.battery_technology),
+        ("Cycle Count", battery.cycle_count),
+        ("Charge Rate", battery.charge_rate),
+        ("Fast Charge", battery.is_fast_charge),
+        ("Is Plugged", battery.is_plugged),
+        ("Battery Voltage", battery.battery_voltage),
+        ("Battery Temperature", battery.battery_temperature),
+        ("Complete Result", battery.get_result),
     ]
 
     total_start = perf_counter()
