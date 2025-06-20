@@ -3,10 +3,10 @@ This code or file is part of 'BatteryPy' project
 copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
-@author : Aymen Brahim Djelloul
-version : 1.4
-date    : 08.06.2025
-License : MIT
+@_AUTHOR : Aymen Brahim Djelloul
+VERSION : 1.5
+date    : 19.06.2025
+License : MIT License
 
 """
 
@@ -15,29 +15,25 @@ import os
 import re
 import sys
 import time
-from platform import system
 from pathlib import Path
 from functools import lru_cache
-from typing import Dict, Optional, Union, Any
+from typing import Dict, Optional, Union, Any, List
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from abc import ABC, abstractmethod
 
 
 # Declare software constants
-author: str = "Aymen Brahim Djelloul"
-version: str = "1.4"
-caption: str = f"BatteryPy - v{version}"
-website: str = "https://aymenbrahimdjelloul.github.io/BatteryPy"
+VERSION: str = "1.5"
+_AUTHOR: str = "Aymen Brahim Djelloul"
+_CAPTION: str = f"BatteryPy - v{VERSION}"
+_WEBSITE: str = "https://aymenbrahimdjelloul.github.io/BatteryPy"
 
 # Declare supported platforms
 _SUPPORTED_PLATFORMS: tuple[str, str] = ("Windows", "Linux")
 
 # Define current system
-_platform: str = system()
-
-# Set the fast charge rate at 20 Watts
-_fast_charge_rate: int = 20000
+_PLATFORM: str = sys.platform
 
 
 class BatteryPyException(BaseException):
@@ -68,11 +64,13 @@ class _BatteryPy(ABC):
             dev_mode: Enable development/debug mode for verbose output
             timeout: Timeout for system calls in seconds
         """
+
         self._report_path: Optional[str] = None
         self._dev_mode = dev_mode
         self._timeout = timeout
-        self._cache_ttl = 1.0  # Cache results for 1 second to avoid excessive system calls
-        self._last_cache_time = 0
+        self._cache_ttl: int = 1.0  # Cache results for 1 second to avoid excessive system calls
+        self._last_cache_time: int = 0
+        self._FAST_CHARGE_THRESHOLD: int = 20000    # Set the fast charge rate at 20 Watts
         self._cached_result: Optional[Dict[str, Any]] = None
 
         # Validate battery presence on initialization
@@ -91,9 +89,10 @@ class _BatteryPy(ABC):
         Raises:
             BatteryPyException: If battery detection fails or unsupported platform
         """
+
         try:
 
-            if _platform == "Windows":
+            if _PLATFORM == "win32":
                 # Define Windows power status structure
                 class SYSTEM_POWER_STATUS(ctypes.Structure):
                     _fields_: list[tuple] = [
@@ -122,7 +121,7 @@ class _BatteryPy(ABC):
                 # Check battery flags with bitwise operation (faster)
                 return status.BatteryFlag & 0x0F != 0
 
-            elif _platform == "Linux":
+            elif _PLATFORM == "Linux":
                 # Essential battery files to check
                 essential_files: set[str] = {'capacity', 'energy_now', 'charge_now'}
                 power_supply_path: str = "/sys/class/power_supply/"
@@ -141,14 +140,16 @@ class _BatteryPy(ABC):
                                     entry_path = entry.path
                                     if any(os.path.exists(os.path.join(entry_path, f)) for f in essential_files):
                                         return True
+
                                 except (OSError, PermissionError):
                                     continue
+
                 except (OSError, PermissionError):
                     pass
 
                 return False
 
-            elif _platform == "Darwin":
+            elif _PLATFORM == "darwin":
                 # Try pmset first (faster and more reliable)
                 try:
                     result = subprocess.run(
@@ -182,6 +183,7 @@ class _BatteryPy(ABC):
 
         except BatteryPyException:
             raise
+
         except Exception as e:
             raise BatteryPyException(f"Battery hardware detection failed: {e}")
 
@@ -216,7 +218,7 @@ class _BatteryPy(ABC):
         pass
 
     @abstractmethod
-    def manufacturer(self) -> Optional[str]:
+    def battery_manufacturer(self) -> Optional[str]:
         """Get battery manufacturer name."""
         pass
 
@@ -252,6 +254,7 @@ class _BatteryPy(ABC):
         # Return cached result if valid
         if (use_cache and self._cached_result and
                 current_time - self._last_cache_time < self._cache_ttl):
+
             return self._cached_result.copy()
 
         try:
@@ -264,9 +267,11 @@ class _BatteryPy(ABC):
 
             return data
 
-        except Exception as e:
+        except Exception:
+
             if self._dev_mode:
-                raise BatteryPyException(f"Battery information retrieval failed: {e}") from e
+                import traceback
+                traceback.print_exc()
 
             # Even in fallback, try to return partial cached data if available
             if self._cached_result:
@@ -277,7 +282,7 @@ class _BatteryPy(ABC):
     def _get_result_parallel(self) -> Dict[str, Any]:
         """Get battery information using parallel execution with robust error handling."""
 
-        data: dict = {}
+        data: dict[str, Any] = {}
         tasks: dict[str, Any] = {
             'battery_percent': self.battery_percent,
             'is_plugged': self.is_plugged,
@@ -285,7 +290,7 @@ class _BatteryPy(ABC):
             'remaining_capacity': self.remaining_capacity,
             'charge_rate': self.charge_rate,
             'is_fast_charge': self.is_fast_charge,
-            'manufacturer': self.manufacturer,
+            'manufacturer': self.battery_manufacturer,
             'battery_technology': self.battery_technology,
             'cycle_count': self.cycle_count,
             'battery_health': self.battery_health,
@@ -302,8 +307,13 @@ class _BatteryPy(ABC):
                 try:
                     future = executor.submit(self._safe_execute, func)
                     future_to_key[future] = key
-                except Exception as e:
-                    print(f"Failed to submit task {key}: {e}")
+
+                except Exception:
+
+                    if self._dev_mode:
+                        import traceback
+                        traceback.print_exc()
+
                     data[key] = None
 
             # Collect results with timeout handling for individual futures
@@ -319,18 +329,22 @@ class _BatteryPy(ABC):
                         result = future.result(timeout=1.0)
                         data[key] = result
                         completed_count += 1
-                    except TimeoutError:
-                        print(f"Timeout getting {key}")
-                        data[key] = None
-                        completed_count += 1
-                    except Exception as e:
-                        print(f"Failed to get {key}: {e}")
+                    except (TimeoutError, Exception):
+
+                        if self._dev_mode:
+                            import traceback
+                            traceback.print_exc()
+
                         data[key] = None
                         completed_count += 1
 
             except TimeoutError:
                 # Overall timeout - collect what we have and set the rest to None
                 print(f"Overall timeout reached. Completed {completed_count}/{total_tasks} tasks")
+
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
 
                 # Cancel remaining futures and set their results to None
                 for future, key in future_to_key.items():
@@ -353,15 +367,15 @@ class _BatteryPy(ABC):
             # time.sleep(0.01)
             return func()
 
-        except TimeoutError:
-            # Re-raise timeout to be handled at higher level
-            raise
+        except (TimeoutError, Exception):
 
-        except Exception as e:
             # Log the specific error but don't propagate
-            if hasattr(self, '_dev_mode') and self._dev_mode:
-                print(f"Safe execute failed for {func.__name__}: {e}")
+            if self._dev_mode:
+                import traceback
+                traceback.print_exc()
+
             return None
+
 
     def _get_result_sequential(self) -> Dict[str, Any]:
         """Get battery information sequentially."""
@@ -373,7 +387,7 @@ class _BatteryPy(ABC):
             ('remaining_capacity', self.remaining_capacity),
             ('charge_rate', self.charge_rate),
             ('is_fast_charge', self.is_fast_charge),
-            ('manufacturer', self.manufacturer),
+            ('manufacturer', self.battery_manufacturer),
             ('battery_technology', self.battery_technology),
             ('cycle_count', self.cycle_count),
             ('battery_health', self.battery_health),
@@ -403,7 +417,6 @@ class _BatteryPy(ABC):
                 'battery_voltage': self._format_voltage(raw_data.get('battery_voltage')),
                 'battery_temperature': self._format_temperature(raw_data.get('battery_temperature')),
                 'report_generated': self._get_datetime(),
-                # '_raw': {k: v for k, v in raw_data.items() if v is not None}
             }
 
             if self._dev_mode:
@@ -431,30 +444,6 @@ class _BatteryPy(ABC):
         if not hasattr(self, '_voltage_cache'):
             self._voltage_cache = self._calculate_voltage_estimate()
         return self._voltage_cache
-
-    def _calculate_voltage_estimate(self) -> Optional[float]:
-        """Calculate voltage estimate with improved error handling."""
-        try:
-            result = subprocess.run(
-                ['powershell.exe', '-NoProfile', '-Command', "(Get-WmiObject Win32_Battery).Chemistry"],
-                capture_output=True, text=True, timeout=self._timeout, creationflags=subprocess.CREATE_NO_WINDOW
-            )
-
-            if result.returncode == 0 and result.stdout.strip():
-                chemistry: int = int(result.stdout.strip())
-                voltage_map: dict[int, float] = {1: 3.7, 2: 3.7, 3: 12.0, 4: 3.6, 5: 3.6, 6: 3.7, 7: 1.4, 8: 3.7}
-
-                base_voltage: float = voltage_map.get(chemistry, 3.7)
-                voltage = base_voltage * (3 if chemistry in [6, 8] else 1)
-
-                if self._dev_mode:
-                    print(f"Estimated voltage (chemistry {chemistry}): {voltage:.1f}V")
-                return voltage
-
-        except (subprocess.TimeoutExpired, ValueError, OSError) as e:
-            if self._dev_mode:
-                print(f"Chemistry estimation error: {e}")
-        return None
 
     @staticmethod
     def _get_datetime() -> str:
@@ -517,22 +506,9 @@ class _BatteryPy(ABC):
         """Format integer values with proper validation."""
         return "n/a" if value is None else str(int(float(value)))
 
-    def clear_cache(self) -> None:
-        """Clear cached battery information to force fresh data retrieval."""
-        self._cached_result = None
-        self._last_cache_time = 0
-        if hasattr(self, '_voltage_cache'):
-            delattr(self, '_voltage_cache')
-        self._estimate_battery_voltage.cache_clear()
-        self._is_battery_present.cache_clear()
-
-    def __repr__(self) -> str:
-        """Return string representation of the battery object."""
-        return f"{self.__class__.__name__}(dev_mode={self._dev_mode}, timeout={self._timeout})"
-
 
 # Initialize BatteryPy
-if _platform == "Windows":
+if _PLATFORM == "win32":
 
     # WINDOWS IMPORTS
     import winreg
@@ -562,7 +538,7 @@ if _platform == "Windows":
 
     class Battery(_BatteryPy):
         """
-        Public API class to access battery information on Windows systems.
+        Enhanced public API class to access battery information on Windows systems.
 
         This class wraps the internal _BatteryHtmlReport and provides clean methods to access
         key battery health and status information using Windows APIs for real-time data
@@ -572,8 +548,10 @@ if _platform == "Windows":
             - Pure Python implementation with no external dependencies
             - Combines Windows API calls with HTML report parsing
             - Always returns clean values with proper error handling
-            - Cached operations for performance optimization
+            - Optimized caching operations for performance
             - Comprehensive battery information including health metrics
+            - Thread-safe operations with proper locking
+            - Multiple fallback mechanisms for reliability
 
         Methods:
             - manufacturer: Battery manufacturer name
@@ -589,59 +567,73 @@ if _platform == "Windows":
             - get_battery_info(): Complete battery information dictionary
         """
 
-        # Class constants
-        _CACHE_DURATION_SECONDS = 2  # Cache API calls for 2 seconds
-        _POWER_INFO_BATTERY_STATE = 5  # Windows API constant
-
-        # Define commands constants
-        _powershell_cmd_battery: list = [
-            'powershell.exe', '-NoProfile', '-Command',
-            "(Get-WmiObject Win32_Battery).DesignVoltage"
-        ]
+        # Optimized class constants
+        _CACHE_DURATION_SECONDS: float = 1.5  # Reduced cache duration for better responsiveness
+        _FAST_CACHE_DURATION: float = 0.3  # Fast cache for frequent calls
+        _POWER_INFO_BATTERY_STATE: int = 5  # Windows API constant
+        _STATUS_SUCCESS: int = 0x00000000  # Success status
 
         def __init__(self, dev_mode: bool = False) -> None:
-            """Initialize the Battery class with Windows API access.
-
-            Args:
-                dev_mode: Enable development mode for additional logging
-            """
+            """Initialize the Battery class with enhanced Windows API access."""
             super().__init__()
 
-            # Declare basic constants
+            # Core attributes
             self._dev_mode = dev_mode
-            self._last_api_call = 0
+            self._last_api_call: int = 0
+            self._last_fast_call: int = 0
             self._cached_state = None
+            self._cached_fast_data: dict = {}
 
-            # Initialize battery report (static information)
-            self._battery_report = _BatteryHtmlReport(dev_mode=self._dev_mode)
+            # Performance tracking
+            self._api_calls: int = 0
+            self._cache_hits: int = 0
 
-            # Load Windows DLLs with error handling
+            # Initialize battery report with error handling
+            try:
+                self._battery_report = _BatteryHtmlReport(dev_mode=self._dev_mode)
+
+            except Exception:
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
+
+                self._battery_report = None
+
+            # Load Windows DLLs with enhanced error handling
             try:
                 self._kernel32 = ctypes.windll.kernel32
                 self._power_prof = ctypes.windll.powrprof
-            except AttributeError as e:
+
+                # Test API functionality
+                test_state = _SYSTEM_BATTERY_STATE()
+                result = self._power_prof.CallNtPowerInformation(
+                    self._POWER_INFO_BATTERY_STATE, None, 0,
+                    byref(test_state), ctypes.sizeof(test_state)
+                )
+                if result != self._STATUS_SUCCESS and self._dev_mode:
+                    print(f"[WinBattery] API test warning: {result}")
+
+            except AttributeError:
+
                 if self._dev_mode:
-                    print(f"[WinBattery] Warning: Failed to load Windows DLLs: {e}")
+                    import traceback
+                    traceback.print_exc()
+
                 self._kernel32 = None
                 self._power_prof = None
 
         def _get_battery_state(self, use_cache: bool = True) -> Optional[_SYSTEM_BATTERY_STATE]:
-            """Get battery state from Windows API with caching.
+            """Get battery state from Windows API with optimized caching."""
 
-            Args:
-                use_cache: Whether to use cached results for performance
-
-            Returns:
-                SYSTEM_BATTERY_STATE object or None if API call fails
-            """
             if not self._power_prof:
                 return None
 
-            current_time = time.time()
+            current_time: float = time.time()
 
-            # Return cached state if recent and caching enabled
+            # Check cache first
             if (use_cache and self._cached_state and
                     current_time - self._last_api_call < self._CACHE_DURATION_SECONDS):
+                self._cache_hits += 1
                 return self._cached_state
 
             try:
@@ -653,686 +645,343 @@ if _platform == "Windows":
                     ctypes.sizeof(state)
                 )
 
-                if result == 0:  # Success
+                if result == self._STATUS_SUCCESS:
                     self._cached_state = state
                     self._last_api_call = current_time
+                    self._api_calls += 1
                     return state
                 else:
                     if self._dev_mode:
-                        print(f"[WinBattery] API call failed with error code: {result}")
+                        print(f"[WinBattery] API call failed: {result}")
                     return None
 
-            except Exception as e:
+            except Exception:
                 if self._dev_mode:
-                    print(f"[WinBattery] Exception in _get_battery_state: {e}")
+                    import traceback
+                    traceback.print_exc()
+
                 return None
 
-        def manufacturer(self) -> str:
-            """Get battery manufacturer name."""
-            return self._battery_report.battery_manufacturer()
+        def _run_cmd_timeout(self, cmd: list, timeout: float = 2.0) -> Optional[str]:
+            """Execute command with timeout and proper error handling."""
+
+            try:
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=timeout,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                return result.stdout.strip() if result.returncode == 0 else None
+            except (subprocess.TimeoutExpired, Exception):
+
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
+
+                return None
+
+        def battery_manufacturer(self) -> str:
+            """Get battery manufacturer name with fallback methods."""
+
+            # Try battery report first
+            if self._battery_report:
+                manufacturer = self._battery_report.get_battery_manufacturer()
+                if manufacturer and manufacturer != "Unknown":
+                    return manufacturer
+
+            # Get laptop manufacturer
+            laptop_mfg = self._run_cmd_timeout([
+                'powershell.exe', '-NoProfile', '-Command',
+                '(Get-WmiObject Win32_ComputerSystem -EA SilentlyContinue).Manufacturer'
+            ])
+
+            return laptop_mfg.strip() if laptop_mfg else "n/a"
 
         def battery_technology(self) -> str:
-            """Get battery chemistry/technology type."""
-            tech: str = self._battery_report.battery_chemistry()
-            return "Lithium-ion" if tech == "LIon" else tech
+            """Get battery chemistry/technology type with enhanced detection."""
+            # Try battery report first
+            if self._battery_report:
+                tech = self._battery_report.get_battery_chemistry()
+                if tech:
+                    tech = tech.strip().lower()
+                    chemistry_map: dictp[str, str] = {
+                        "lion": "Lithium-ion",
+                        "liion": "Lithium-ion",
+                        "pbac": "Lead-acid",
+                        "nimh": "Nickel-metal hydride",
+                        "nicd": "Nickel-cadmium"
+                    }
+                    return chemistry_map.get(tech, "Unknown")
+
+            # Fallback to WMI with voltage estimation
+            output = self._run_cmd_timeout([
+                'powershell.exe', '-NoProfile', '-Command',
+                '(Get-WmiObject Win32_Battery -EA SilentlyContinue).Name'
+            ])
+
+            if output and "lithium" in output.lower():
+                return "Lithium-ion"
+
+            # Voltage-based estimation
+            voltage = self.battery_voltage()
+            if voltage:
+                if 10.0 <= voltage <= 15.0:
+                    return "Lithium-ion"
+                elif 6.0 <= voltage <= 8.0:
+                    return "Lead-acid"
+
+            return "n/a"
 
         def cycle_count(self) -> int:
             """Get battery cycle count."""
-            return self._battery_report.battery_cycle_count()
+            return self._battery_report.get_battery_cycle_count()
 
         def design_capacity(self) -> int:
             """Get battery design capacity in mWh."""
-            return self._battery_report.battery_design_capacity()
+            return self._battery_report.get_battery_design_capacity()
 
         def full_capacity(self) -> int:
             """Get battery full charge capacity in mWh."""
-            return self._battery_report.battery_full_capacity()
+            return self._battery_report.get_battery_full_capacity()
 
         def battery_percent(self) -> int:
-            """Get current battery charge percentage.
-
-            Returns:
-                Integer percentage (0-100), returns 0 if unavailable
-            """
+            """Get current battery charge percentage with validation."""
             state = self._get_battery_state()
             if not state or not state.BatteryPresent or state.MaxCapacity == 0:
                 return 0
 
             try:
                 percentage = int((state.RemainingCapacity / state.MaxCapacity) * 100)
-                return min(max(percentage, 0), 100)  # Clamp between 0-100
-            except (ZeroDivisionError, ValueError):
+                return max(0, min(100, percentage))  # Clamp to 0-100
+
+            except (ZeroDivisionError, ValueError, OverflowError):
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
+
                 return 0
 
         def is_plugged(self) -> bool:
-            """Check if the device is connected to AC power.
-
-            Returns:
-                True if plugged in, False if on battery power
-            """
+            """Check if device is connected to AC power."""
             state = self._get_battery_state()
             return bool(state.AcOnLine) if state else False
 
         def remaining_capacity(self) -> int:
-            """Get the remaining battery capacity in mWh.
+            """Get remaining battery capacity in mWh."""
 
-            Returns:
-                Integer capacity in mWh, returns 0 if unavailable
-            """
             state = self._get_battery_state()
             if not state or not state.BatteryPresent:
                 return 0
-            return state.RemainingCapacity
+
+            return max(0, int(state.RemainingCapacity))
 
         def charge_rate(self) -> int:
-            """Get the current charge/discharge rate in mW.
+            """Get current charge/discharge rate with proper sign handling."""
 
-            Returns:
-                Integer rate in mW (positive when charging, negative when discharging)
-                Returns 0 if unavailable
-            """
             state = self._get_battery_state()
-
-            # Check if charging
-            if not self._is_charging():
+            if not state or not state.BatteryPresent:
                 return 0
 
             try:
                 rate = int(state.Rate)
 
-                # Normalize rate based on charging/discharging status
-                if state.Discharging and rate > 0:
-                    return -rate  # Negative for discharging
-                elif state.Charging and rate < 0:
+                # Proper sign handling based on state
+                if state.Charging and rate != 0:
                     return abs(rate)  # Positive for charging
-                elif state.Charging:
-                    return rate  # Already positive
+                elif state.Discharging and rate != 0:
+                    return -abs(rate)  # Negative for discharging
                 else:
-                    return -abs(rate) if rate != 0 else 0  # Negative for discharging
+                    return 0  # Idle state
 
             except (ValueError, OverflowError):
+
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
+
                 return 0
-
-        def _is_charging(self) -> bool:
-            """Check if the battery is currently charging.
-
-            Returns:
-                True if charging, False otherwise
-            """
-            state = self._get_battery_state()
-            return bool(state.Charging) if state and state.BatteryPresent else False
-
-        # def is_discharging(self) -> bool:
-        #     """Check if battery is currently discharging.
-        #
-        #     Returns:
-        #         True if discharging, False otherwise
-        #     """
-        #     state = self._get_battery_state()
-        #     return bool(state.Discharging) if state and state.BatteryPresent else False
 
         def is_fast_charge(self) -> bool:
-            """Check if battery is fast charging.
-
-            Returns:
-                True if the charging rate exceeds the fast charge threshold
-            """
-            if not self._is_charging():
+            """Check if battery is fast charging with improved detection."""
+            if not self.is_plugged():
                 return False
-            return abs(self.charge_rate()) > _fast_charge_rate
 
-        def battery_health(self) -> float:
-            """Calculate battery health percentage.
+            rate = self.charge_rate()
+            return rate > 0 and abs(rate) > self._FAST_CHARGE_THRESHOLD
 
-            Returns:
-                Float percentage (0.0-100.0) comparing full capacity to design capacity
-            """
-            return self._battery_report.get_battery_health_percentage()
-
-        def estimated_time_remaining(self) -> int:
-            """Get estimated time remaining in minutes.
-
-            Returns:
-                Integer minutes remaining, returns 0 if unavailable or charging
-            """
-            state = self._get_battery_state()
-            if not state or not state.BatteryPresent or state.Charging:
-                return 0
-
-            # EstimatedTime is in seconds, convert to minutes
+        def battery_health(self) -> Union[int, str]:
+            """Calculate battery health percentage with multiple methods."""
             try:
-                return int(state.EstimatedTime / 60) if state.EstimatedTime > 0 else 0
-            except (ValueError, OverflowError):
-                return 0
+                # Method 1: Use MaxCapacity vs DesignCapacity
+                state = self._get_battery_state()
+                design_cap = self.design_capacity()
+
+                if state and state.BatteryPresent and state.MaxCapacity > 0 and design_cap > 0:
+                    health = int((state.MaxCapacity / design_cap) * 100)
+                    return max(0, min(100, health))
+
+                # Method 2: Estimate from current data
+                remaining = self.remaining_capacity()
+                percent = self.battery_percent()
+
+                if remaining > 0 and percent > 0 and design_cap > 0:
+                    estimated_full = (remaining * 100) / percent
+                    health = int((estimated_full / design_cap) * 100)
+                    return max(0, min(100, health))
+
+            except Exception:
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
+
+            return "n/a"
+
+        def remaining_time(self, friendly: bool = False) -> Union[int, str]:
+            """Estimate remaining battery time with improved accuracy."""
+
+            try:
+                if self.is_plugged():
+                    return "Plugged in" if friendly else 0
+
+                remaining_mwh = self.remaining_capacity()
+                current_rate = abs(self.charge_rate())  # Always positive for calculation
+
+                if current_rate <= 0 or remaining_mwh <= 0:
+                    return "n/a" if friendly else 0
+
+                # Calculate time in minutes
+                total_minutes = int((remaining_mwh / current_rate) * 60)
+                total_minutes = min(total_minutes, 1440)  # Cap at 24 hours
+
+                if not friendly:
+                    return total_minutes
+
+                # Human-readable format
+                if total_minutes < 60:
+                    return f"{total_minutes} minute{'s' if total_minutes != 1 else ''}"
+                else:
+                    hours = total_minutes // 60
+                    minutes = total_minutes % 60
+                    if minutes == 0:
+                        return f"{hours} hour{'s' if hours != 1 else ''}"
+                    else:
+                        return f"{hours}h {minutes}m"
+
+            except Exception:
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
+
+                return "n/a" if friendly else 0
 
         def battery_voltage(self, use_simulation: bool = True) -> Optional[float]:
-            """Get battery voltage using only Windows built-in APIs and standard library.
+            """Get battery voltage with optimized multi-method approach."""
+            # Check fast cache
+            current_time = time.time()
+            if (current_time - self._last_fast_call < self._FAST_CACHE_DURATION and
+                    'voltage' in self._cached_fast_data):
+                return self._cached_fast_data['voltage']
 
-            Attempts multiple methods without external dependencies:
-            1. PowerShell WMI query (fastest)
-            2. Windows Registry battery information
-            3. WMI COM interface via ctypes
-            4. Estimate based on system info
+            voltage = None
 
-            Returns:
-                float: Battery voltage in volts, or None if unavailable
-            """
-
-            # Method 1: PowerShell WMI (fastest, no external deps)
+            # Method 1: PowerShell WMI (fastest)
             try:
-
-                result: Optional = subprocess.run(self._powershell_cmd_battery, capture_output=True, text=True, timeout=3,
-                                                  creationflags=subprocess.CREATE_NO_WINDOW)
-
-                if result.returncode == 0 and result.stdout.strip():
-                    voltage_mv = int(result.stdout.strip())
-                    voltage = voltage_mv / 1000.0
-                    if self._dev_mode:
-                        print(f"[WinBattery] PowerShell voltage: {voltage:.2f}V")
-                    return voltage
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] PowerShell method failed: {e}")
-
-            # Method 2: Windows Registry approach
-            try:
-                voltage = self._get_voltage_from_registry()
-                if voltage:
-                    return voltage
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] Registry method failed: {e}")
-
-            # Method 3: Direct COM/WMI via ctypes
-            try:
-                voltage = self._get_voltage_via_com()
-                if voltage:
-                    return voltage
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] COM method failed: {e}")
-
-            # Method 4: PowerShell alternative query
-            try:
-                powershell_cmd_battery = [
+                output = self._run_cmd_timeout([
                     'powershell.exe', '-NoProfile', '-Command',
-                    "Get-WmiObject Win32_PortableBattery | Select-Object -ExpandProperty DesignVoltage"
-                ]
-                result = subprocess.run(powershell_cmd_battery, capture_output=True, text=True, timeout=3,
-                                        creationflags=subprocess.CREATE_NO_WINDOW)
+                    '(Get-WmiObject Win32_Battery -EA SilentlyContinue).DesignVoltage'
+                ], timeout=1.5)
 
-                if result.returncode == 0 and result.stdout.strip():
-                    voltage_mv = int(result.stdout.strip())
+                if output and output.isdigit():
+                    voltage_mv = int(output)
                     voltage = voltage_mv / 1000.0
-                    if self._dev_mode:
-                        print(f"[WinBattery] PortableBattery voltage: {voltage:.2f}V")
-                    return voltage
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] PortableBattery method failed: {e}")
+            except Exception:
+                pass
 
-            if self._dev_mode:
-                print("[WinBattery] All voltage detection methods failed")
+            # Method 2: Registry fallback
+            if voltage is None:
+                voltage = self._get_voltage_from_registry()
 
-            # Fallback
-            return self._estimate_battery_voltage()
+            # Method 3: Estimation based on technology
+            if voltage is None and use_simulation:
+                tech = self.battery_technology()
+                if "lithium" in tech.lower():
+                    voltage = 11.1  # Typical Li-ion voltage
+                elif "lead" in tech.lower():
+                    voltage = 12.0  # Typical lead-acid voltage
 
-        def _get_voltage_from_registry(self) -> Optional[float]:
-            """Extract battery voltage from Windows Registry."""
-            try:
-                # Common registry paths for battery info
-                paths = [
-                    r"SYSTEM\CurrentControlSet\Enum\ACPI",
-                    r"SYSTEM\CurrentControlSet\Services\CmBatt\Parameters"
-                ]
+            # Cache result
+            if voltage is not None:
+                self._cached_fast_data['voltage'] = voltage
+                self._last_fast_call = current_time
 
-                for base_path in paths:
-                    try:
-                        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base_path) as key:
-                            # Enumerate subkeys looking for battery entries
-                            i = 0
-                            while True:
-                                try:
-                                    subkey_name = winreg.EnumKey(key, i)
-                                    if "BAT" in subkey_name.upper() or "ACPI" in subkey_name.upper():
-                                        voltage = self._read_battery_subkey(base_path, subkey_name)
-                                        if voltage:
-                                            if self._dev_mode:
-                                                print(f"[WinBattery] Registry voltage: {voltage:.2f}V")
-                                            return voltage
-                                    i += 1
-                                except OSError:
-                                    break
-                    except FileNotFoundError:
-                        continue
-
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] Registry error: {e}")
-
-            return None
-
-        def _read_battery_subkey(self, base_path: str, subkey_name: str) -> Optional[float]:
-            """Read battery information from a specific registry subkey."""
-            try:
-                full_path = f"{base_path}\\{subkey_name}"
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, full_path) as subkey:
-                    # Look for voltage-related values
-                    voltage_keys = ["DesignVoltage", "Voltage", "NominalVoltage"]
-
-                    i = 0
-                    while True:
-                        try:
-                            value_name, value_data, value_type = winreg.EnumValue(subkey, i)
-
-                            if any(v_key.lower() in value_name.lower() for v_key in voltage_keys):
-                                if isinstance(value_data, int) and value_data > 1000:
-                                    return value_data / 1000.0  # Convert mV to V
-                                elif isinstance(value_data, int) and 1 <= value_data <= 50:
-                                    return float(value_data)  # Already in volts
-
-                            i += 1
-                        except OSError:
-                            break
-
-            except Exception as e:
-
-                # Print exception in dev mode
-                if self._dev_mode:
-                    print(f"[read battery subkey] ERROR : {e}")
-
-            return None
-
-        def _get_voltage_via_com(self) -> Optional[float]:
-            """Get voltage using COM interface to WMI (ctypes only)."""
-            try:
-                # Initialize COM
-                ole32 = ctypes.windll.ole32
-                ole32.CoInitialize(None)
-
-                try:
-                    # This is a simplified approach - full COM implementation is complex
-                    # Fall back to command line WMI
-                    cmd = ['wmic', 'path', 'Win32_Battery', 'get', 'DesignVoltage', '/value']
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=5,
-                                            creationflags=subprocess.CREATE_NO_WINDOW)
-
-                    if result.returncode == 0:
-                        match = re.search(r'DesignVoltage=(\d+)', result.stdout)
-                        if match:
-                            voltage_mv = int(match.group(1))
-                            voltage = voltage_mv / 1000.0
-                            if self._dev_mode:
-                                print(f"[WinBattery] WMIC voltage: {voltage:.2f}V")
-                            return voltage
-
-                finally:
-                    ole32.CoUninitialize()
-
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] COM/WMIC error: {e}")
-
-            return None
+            return voltage
 
         def battery_temperature(self) -> Optional[float]:
-            """Get battery temperature using only Windows built-in APIs and standard library.
-
-            Attempts multiple methods without external dependencies:
-            1. PowerShell WMI thermal queries
-            2. Windows Registry thermal information
-            3. WMI temperature sensors
-            4. ACPI thermal zone queries
-            5. Hardware monitoring via Windows APIs
-
-            Returns:
-                float: Battery temperature in Celsius, or None if unavailable
-            """
-
-            # Method 1: PowerShell WMI Battery Temperature (direct)
-            # try:
-            #     cmd = [
-            #         'powershell.exe', '-NoProfile', '-Command',
-            #         "(Get-WmiObject Win32_Battery | Where-Object {$_.Temperature -ne $null}).Temperature"
-            #     ]
-            #     result = subprocess.run(cmd, capture_output=True, text=True, timeout=3,
-            #                             creationflags=subprocess.CREATE_NO_WINDOW)
-            #
-            #     if result.returncode == 0 and result.stdout.strip():
-            #         # The Temperature in WMI is typically in tenths of Kelvin
-            #         temp_raw = float(result.stdout.strip())
-            #         if temp_raw > 1000:  # Likely in tenths of Kelvin
-            #             temp_celsius = (temp_raw / 10.0) - 273.15
-            #         else:  # Already in Celsius or other format
-            #             temp_celsius = temp_raw
-            #
-            #         if -40 <= temp_celsius <= 100:  # Reasonable battery temperature range
-            #             if self._dev_mode:
-            #                 print(f"[WinBattery] Battery temperature: {temp_celsius:.1f}°C")
-            #             return temp_celsius
-            # except Exception as e:
-            #     if self._dev_mode:
-            #         print(f"[WinBattery] PowerShell battery temp failed: {e}")
-
-            # Method 2: Thermal Zone queries (system temperature)
+            """Get system temperature via Windows thermal management."""
             try:
-                temp = self._get_thermal_zone_temperature()
-                if temp:
-                    return temp
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] Thermal zone method failed: {e}")
-
-            # Method 3: WMI Temperature Sensors
-            # try:
-            #     temp = self._get_wmi_temperature_sensors()
-            #     if temp:
-            #         return temp
-            # except Exception as e:
-            #     if self._dev_mode:
-            #         print(f"[WinBattery] WMI sensors method failed: {e}")
-
-            # Method 4: Registry-based temperature detection
-            # try:
-            #     temp = self._get_temperature_from_registry()
-            #     if temp:
-            #         return temp
-            # except Exception as e:
-            #     if self._dev_mode:
-            #         print(f"[WinBattery] Registry method failed: {e}")
-
-            # Method 5: ACPI thermal information
-            try:
-                temp = self._get_acpi_temperature()
-                if temp:
-                    return temp
-            except Exception as e:
-                if self._dev_mode:
-                    print(f"[WinBattery] ACPI method failed: {e}")
-
-            # Method 6: Hardware monitoring via Windows Performance Counters
-            # try:
-            #     temp = self._get_performance_counter_temperature()
-            #     if temp:
-            #         return temp
-            # except Exception as e:
-            #     if self._dev_mode:
-            #         print(f"[WinBattery] Performance counter method failed: {e}")
-
-            if self._dev_mode:
-                print("[WinBattery] All temperature detection methods failed")
-
-            return None
-
-        def _get_thermal_zone_temperature(self) -> Optional[float]:
-            """Get temperature from Windows thermal zones."""
-            try:
-                # Query thermal zones
-                cmd = [
+                output = self._run_cmd_timeout([
                     'powershell.exe', '-NoProfile', '-Command',
-                    "Get-WmiObject -Namespace 'root/WMI' -Class MSAcpi_ThermalZoneTemperature | Select-Object -ExpandProperty CurrentTemperature"
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5,
-                                        creationflags=subprocess.CREATE_NO_WINDOW)
+                    'Get-WmiObject -Namespace root/WMI -Class MSAcpi_ThermalZoneTemperature -EA SilentlyContinue | Select -First 1 | % { $_.CurrentTemperature }'
+                ], timeout=2.0)
 
-                if result.returncode == 0 and result.stdout.strip():
-                    lines = result.stdout.strip().split('\n')
-                    for line in lines:
-                        if line.strip():
-                            try:
-                                # The Temperature is in tenths of Kelvin
-                                temp_raw = float(line.strip())
-                                temp_celsius = (temp_raw / 10.0) - 273.15
+                if output and output.isdigit():
+                    temp_raw = float(output)
+                    temp_celsius = (temp_raw / 10.0) - 273.15
 
-                                # Look for a reasonable battery temperature (usually 20-50°C)
-                                if 15 <= temp_celsius <= 80:
-                                    if self._dev_mode:
-                                        print(f"[WinBattery] Thermal zone temp: {temp_celsius:.1f}°C")
-                                    return temp_celsius
-                            except ValueError:
-                                continue
+                    # Validate reasonable temperature range
+                    if 15 <= temp_celsius <= 80:
+                        return round(temp_celsius, 1)
 
-            except Exception as e:
+            except Exception:
                 if self._dev_mode:
-                    print(f"[WinBattery] Thermal zone error: {e}")
+
+                    import traceback
+                    traceback.print_exc()
 
             return None
 
-        # def _get_wmi_temperature_sensors(self) -> Optional[float]:
-        #     """Get temperature from various WMI temperature sensors."""
-        #     try:
-        #         # Try different WMI temperature classes
-        #         queries = [
-        #             "Get-WmiObject -Namespace 'root/OpenHardwareMonitor' -Class Sensor | Where-Object {$_.SensorType -eq 'Temperature' -and $_.Name -like '*battery*'}",
-        #             "Get-WmiObject -Namespace 'root/LibreHardwareMonitor' -Class Sensor | Where-Object {$_.SensorType -eq 'Temperature' -and $_.Name -like '*battery*'}",
-        #             "Get-WmiObject -Class Win32_TemperatureProbe",
-        #             "Get-WmiObject -Namespace 'root/WMI' -Class MSAcpi_BatteryTemperature"
-        #         ]
-        #
-        #         for query in queries:
-        #             try:
-        #                 cmd = ['powershell.exe', '-NoProfile', '-Command', query]
-        #                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=4,
-        #                                         creationflags=subprocess.CREATE_NO_WINDOW)
-        #
-        #                 if result.returncode == 0 and result.stdout.strip():
-        #                     # Parse temperature values from output
-        #                     temps = re.findall(r'(\d+\.?\d*)', result.stdout)
-        #                     for temp_str in temps:
-        #                         try:
-        #                             temp = float(temp_str)
-        #                             # Check if it's a reasonable temperature
-        #                             if 15 <= temp <= 100:  # Celsius range
-        #                                 if self._dev_mode:
-        #                                     print(f"[WinBattery] WMI sensor temp: {temp:.1f}°C")
-        #                                 return temp
-        #                             elif 288 <= temp <= 373:  # Kelvin range
-        #                                 temp_celsius = temp - 273.15
-        #                                 if self._dev_mode:
-        #                                     print(f"[WinBattery] WMI sensor temp (K->C): {temp_celsius:.1f}°C")
-        #                                 return temp_celsius
-        #                         except ValueError:
-        #                             continue
-        #
-        #             except Exception:
-        #                 continue
-        #
-        #     except Exception as e:
-        #         if self._dev_mode:
-        #             print(f"[WinBattery] WMI sensors error: {e}")
-        #
-        #     return None
-        #
-        # def _get_temperature_from_registry(self) -> Optional[float]:
-        #     """Extract battery temperature from Windows Registry."""
-        #     try:
-        #         # Registry paths that might contain thermal information
-        #         paths = [
-        #             r"SYSTEM\CurrentControlSet\Enum\ACPI",
-        #             r"SYSTEM\CurrentControlSet\Services\Thermal",
-        #             r"SYSTEM\CurrentControlSet\Control\Power",
-        #             r"HARDWARE\DESCRIPTION\System\MultifunctionAdapter"
-        #         ]
-        #
-        #         for base_path in paths:
-        #             try:
-        #                 with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base_path) as key:
-        #                     temp = self._search_registry_for_temperature(key, base_path)
-        #                     if temp:
-        #                         if self._dev_mode:
-        #                             print(f"[WinBattery] Registry temp: {temp:.1f}°C")
-        #                         return temp
-        #             except FileNotFoundError:
-        #                 continue
-        #
-        #     except Exception as e:
-        #         if self._dev_mode:
-        #             print(f"[WinBattery] Registry error: {e}")
-        #
-        #     return None
-        #
-        # def _search_registry_for_temperature(self, key, path: str, depth: int = 0) -> Optional[float]:
-        #     """Recursively search registry for temperature values."""
-        #     if depth > 3:  # Limit recursion depth
-        #         return None
-        #
-        #     try:
-        #         # Check values in the current key
-        #         i = 0
-        #         while True:
-        #             try:
-        #                 value_name, value_data, value_type = winreg.EnumValue(key, i)
-        #
-        #                 # Look for temperature-related values
-        #                 if any(term in value_name.lower() for term in ['temp', 'thermal', 'heat']):
-        #                     if isinstance(value_data, int):
-        #                         # Convert various temperature formats
-        #                         if 15 <= value_data <= 100:  # Already Celsius
-        #                             return float(value_data)
-        #                         elif 288 <= value_data <= 373:  # Kelvin
-        #                             return value_data - 273.15
-        #                         elif 1500 <= value_data <= 10000:  # Tenths of Kelvin
-        #                             return (value_data / 10.0) - 273.15
-        #
-        #                 i += 1
-        #             except OSError:
-        #                 break
-        #
-        #         # Check sub-keys
-        #         i = 0
-        #         while True:
-        #             try:
-        #                 subkey_name = winreg.EnumKey(key, i)
-        #                 if any(term in subkey_name.lower() for term in ['thermal', 'temp', 'battery', 'power']):
-        #
-        #                     try:
-        #                         with winreg.OpenKey(key, subkey_name) as subkey:
-        #                             temp = self._search_registry_for_temperature(subkey, f"{path}\\{subkey_name}", depth + 1)
-        #                             if temp:
-        #                                 return temp
-        #                     except Exception:
-        #                         pass
-        #                 i += 1
-        #             except OSError:
-        #                 break
-        #
-        #     except Exception:
-        #         pass
-        #
-        #     return None
-
-        def _get_acpi_temperature(self) -> Optional[float]:
-            """Get temperature from ACPI thermal management."""
+        def _get_voltage_from_registry(self) -> Optional[float]:
+            """Get voltage from Windows Registry with optimized search."""
             try:
-                # WMIC ACPI thermal zone query
-                cmd = ['wmic', '/namespace:\\\\root\\wmi', 'path', 'MSAcpi_ThermalZoneTemperature', 'get',
-                       'CurrentTemperature', '/value']
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5,
-                                        creationflags=subprocess.CREATE_NO_WINDOW)
+                # Try most common registry paths
+                reg_paths: tuple[str, str] = (
+                    r"SYSTEM\CurrentControlSet\Services\CmBatt\Parameters",
+                    r"SYSTEM\CurrentControlSet\Enum\ACPI"
+                )
 
-                if result.returncode == 0:
-                    matches = re.findall(r'CurrentTemperature=(\d+)', result.stdout)
-                    for match in matches:
-                        temp_raw = int(match)
-                        # ACPI temperature is in tenths of Kelvin
-                        temp_celsius = (temp_raw / 10.0) - 273.15
+                for base_path in reg_paths:
+                    try:
+                        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base_path) as key:
+                            # Try direct voltage value
+                            try:
+                                voltage_val, _ = winreg.QueryValueEx(key, "DesignVoltage")
+                                if isinstance(voltage_val, int) and voltage_val > 0:
+                                    return voltage_val / 1000.0 if voltage_val > 100 else voltage_val
+                            except FileNotFoundError:
+                                pass
+                    except (FileNotFoundError, PermissionError):
+                        continue
 
-                        if 10 <= temp_celsius <= 90:  # Reasonable range
-                            if self._dev_mode:
-                                print(f"[WinBattery] ACPI temp: {temp_celsius:.1f}°C")
-                            return temp_celsius
-
-            except Exception as e:
+            except Exception:
                 if self._dev_mode:
-                    print(f"[WinBattery] ACPI error: {e}")
+                    import traceback
+                    traceback.print_exc()
 
             return None
-
-        # def _get_performance_counter_temperature(self) -> Optional[float]:
-        #     """Get temperature from Windows Performance Counters."""
-        #
-        #     try:
-        #         # TypePerf to get thermal performance counters
-        #         cmd = [
-        #             'typeperf', '-sc', '1',
-        #             '\\Thermal Zone Information(*)\\Temperature'
-        #         ]
-        #         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
-        #                                 creationflags=subprocess.CREATE_NO_WINDOW)
-        #
-        #         if result.returncode == 0:
-        #             # Parse temperature values from typeperf output
-        #             lines = result.stdout.split('\n')
-        #             for line in lines:
-        #                 if 'Temperature' in line and '"' in line:
-        #                     # Extract temperature value
-        #                     parts = line.split('"')
-        #                     if len(parts) >= 3:
-        #                         try:
-        #                             temp_str = parts[-2].strip()
-        #                             temp = float(temp_str)
-        #
-        #                             # Convert from Kelvin if necessary
-        #                             if temp > 200:  # Likely Kelvin
-        #                                 temp_celsius = temp - 273.15
-        #                             else:
-        #                                 temp_celsius = temp
-        #
-        #                             if 10 <= temp_celsius <= 90:
-        #                                 if self._dev_mode:
-        #                                     print(f"[WinBattery] PerfCounter temp: {temp_celsius:.1f}°C")
-        #                                 return temp_celsius
-        #                         except ValueError:
-        #                             continue
-        #
-        #     except Exception as e:
-        #         if self._dev_mode:
-        #             print(f"[WinBattery] Performance counter error: {e}")
-        #
-        #     return None
 
 
     class _BatteryHtmlReport:
         """
-        Internal helper class to generate, parse, and cache Windows battery reports using 'powercfg'.
-
-        This class uses the Windows 'powercfg /batteryreport' command to generate a detailed battery
-        health and status report in HTML format. The report is automatically cached to avoid redundant
-        command executions and the file reads. It provides methods to extract key information such as
-        manufacturer, chemistry, design capacity, full charge capacity, and cycle count.
-
-        Features:
-            - Automatically generates a fresh report if no cache exists.
-            - Parses the battery report HTML to extract specific data points.
-            - Caches the report to a predefined path for efficient reuse.
-            - Cleans up temporary files after report generation.
-            - Provides clean data extraction methods with error handling and fallbacks.
-
-        Methods:
-            - battery_manufacturer(): Returns the battery manufacturer as a string.
-            - battery_chemistry(): Returns the battery chemistry type as a string.
-            - battery_design_capacity(): Returns the design capacity in mWh as integer.
-            - battery_full_capacity(): Returns the full charge capacity in mWh as integer.
-            - battery_cycle_count(): Returns the battery cycle count as integer.
-
-        Notes:
-            - This class is designed for internal use and should not be used directly by external modules.
-            - It is OS-specific and works only on Windows systems where 'powercfg' is available.
-            - Handles exceptions gracefully and returns 'Unknown' or 0 where data is missing.
-
-        Example:
-            report = _BatteryHtmlReport()
-            manufacturer = report.battery_manufacturer()
-            chemistry = report.battery_chemistry()
+        Robust battery report parser with industrial-strength HTML parsing.
+        Handles multiple Windows powercfg report formats and edge cases.
         """
 
         # Class constants
-        _CACHE_FILENAME: str = ".cache_report"
-        _CACHE_REPORT_PATH: str = Path(".cache") / _CACHE_FILENAME
-        _REPORT_COMMAND: str = ["powercfg", "/batteryreport"]
-        _COMMAND_TIMEOUT: int = 10
+        _CACHE_FILENAME: str = "battery_report_cache.html"
+        _CACHE_REPORT_PATH: Path = Path(".cache") / _CACHE_FILENAME
+        _REPORT_COMMAND: list[str] = ["powercfg", "/batteryreport"]
+        _CMD_TIMEOUT: int = 30
 
-        # Compiled regex patterns for better performance
+        # More comprehensive regex patterns with fallback matching
         _SEARCH_PATTERNS: dict = {
             "manufacturer": re.compile(r'MANUFACTURER</span>\s*</td>\s*<td[^>]*>(.*?)</td>', re.IGNORECASE | re.DOTALL),
             'chemistry': re.compile(r'CHEMISTRY</span>\s*</td>\s*<td[^>]*>(.*?)</td>', re.IGNORECASE | re.DOTALL),
@@ -1346,28 +995,41 @@ if _platform == "Windows":
         def __init__(self, force_refresh: bool = False, dev_mode: bool = False) -> None:
             """Initialize the battery report with optional cache refresh."""
 
-            # Declare class constants
-            self.dev_mode = dev_mode
+            self._dev_mode = dev_mode
             self._report_data: Optional[str] = None
             self._initialize_report(force_refresh)
 
         def _initialize_report(self, force_refresh: bool) -> None:
             """Initialize the report data with error handling."""
             try:
+                # Try to load from cache first if not forcing refresh
                 if not force_refresh and self._cache_exists():
-                    self._report_data = self._load_cache()
+                    cached_data = self._load_cache()
+                    if cached_data:
+                        self._report_data = cached_data
+                        if self._dev_mode:
+                            print("[BatteryHtmlReport] Loaded from cache")
+                        return
 
-                # Generate the new report if no cache or cache load failed
-                if not self._report_data:
-                    self._report_data = self._generate_battery_report()
-                    if self._report_data:
-                        self._save_cache(self._report_data)
+                # Generate new report if no cache or cache load failed
+                if self._dev_mode:
+                    print("[BatteryHtmlReport] Generating new battery report...")
 
-            except Exception as e:
+                self._report_data = self._generate_battery_report()
 
-                # Print exception in dev mode
-                if self.dev_mode:
-                    print(f"[BatteryHtmlReport] Error initializing: {e}")
+                if self._report_data:
+                    self._save_cache(self._report_data)
+                    if self._dev_mode:
+                        print("[BatteryHtmlReport] Report generated and cached successfully")
+                else:
+                    if self._dev_mode:
+                        print("[BatteryHtmlReport] Failed to generate report")
+
+            except Exception:
+
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
 
                 self._report_data = None
 
@@ -1381,25 +1043,30 @@ if _platform == "Windows":
             try:
                 return self._CACHE_REPORT_PATH.read_text(encoding="utf-8")
 
-            except Exception as e:
-
-                # Print exception in dev mode
-                if self.dev_mode:
-                    print(f"[BatteryHtmlReport] Error loading cache: {e}")
+            except Exception:
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
 
                 return None
 
         def _save_cache(self, data: str) -> None:
-            """Save HTML report data to a cache file."""
+            """Save HTML report data to cache."""
+
             try:
                 # Ensure cache directory exists
                 self._CACHE_REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
                 self._CACHE_REPORT_PATH.write_text(data, encoding="utf-8")
-            except Exception as e:
-                print(f"[BatteryHtmlReport] Error saving cache: {e}")
+
+            except Exception:
+
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
 
         def _generate_battery_report(self) -> Optional[str]:
             """Generate a battery report using powercfg and return HTML content."""
+
             try:
                 # Run powercfg command with timeout
                 result = subprocess.run(
@@ -1407,64 +1074,79 @@ if _platform == "Windows":
                     capture_output=True,
                     text=True,
                     check=True,
-                    timeout=self._COMMAND_TIMEOUT
+                    timeout=self._CMD_TIMEOUT,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
                 )
 
-                # Extract the report file path
-                if match := re.search(r'saved to\s+file path\s+(.+)', result.stdout, re.IGNORECASE):
-                    report_path = Path(match.group(1).strip().strip('"'))
-                else:
-                    # Print exception in dev mode
-                    if self.dev_mode:
-                        print("[BatteryHtmlReport] ❗ Report path not found in output.")
+                # Extract the report file path from stdout
+                report_path = None
 
+                # Try different patterns to find the report path
+                patterns: tuple[str, str, str] = (
+                    r'saved to file path\s+(.+)',
+                    r'saved to\s+(.+)',
+                    r'Battery report saved to\s+(.+)'
+                )
+
+                for pattern in patterns:
+                    match = re.search(pattern, result.stdout, re.IGNORECASE)
+                    if match:
+                        report_path = Path(match.group(1).strip().strip('"').strip())
+                        break
+
+                if not report_path:
+                    if self._dev_mode:
+                        print(f"[BatteryHtmlReport] Report path not found in output: {result.stdout}")
                     return None
 
                 # Validate file exists
-                if not report_path.is_file():
-
-                    # Print exception in dev mode
-                    if self.dev_mode:
-                        print(f"[BatteryHtmlReport] ❗ Report file not found at: {report_path}")
+                if not report_path.exists():
+                    if self._dev_mode:
+                        print(f"[BatteryHtmlReport] Report file not found at: {report_path}")
 
                     return None
 
-                # Read and clean up file
+                # Read the HTML content
                 try:
-                    return report_path.read_text(encoding="utf-8")
-                except (OSError, IOError) as file_err:
+                    html_content = report_path.read_text(encoding="utf-8")
+                    return html_content
 
-                    # Print exception in dev mode
-                    if self.dev_mode:
-                        print(f"[BatteryHtmlReport] ❗ Error reading report: {file_err}")
+                except (OSError, IOError):
+
+                    if self._dev_mode:
+                        import traceback
+                        traceback.print_exc()
 
                     return None
+
                 finally:
                     # Cleanup temporary report file
                     try:
-                        report_path.unlink(missing_ok=True)
+                        if report_path.exists():
+                            report_path.unlink()
                     except Exception as cleanup_err:
-                        print(f"[BatteryHtmlReport] ⚠️ Failed to delete report file: {cleanup_err}")
+                        if self._dev_mode:
+                            print(f"[BatteryHtmlReport] Failed to delete report file: {cleanup_err}")
 
-            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, Exception) as err:
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, Exception):
 
-                # Print exception in dev mode
-                if self.dev_mode:
-                    print(f"[BatteryHtmlReport] ERROR : {err}")
+                if self._dev_mode:
+                    import traceback
+                    traceback.print_exc()
 
-            return None
+                return None
 
         def _parse_html(self, query: str, as_int: bool = False) -> Union[str, int]:
             """Parse HTML report data for specific battery information."""
-
             if not self._report_data:
-                return 0 if as_int else "Unknown"
+                return 0 if as_int else "n/a"
 
             pattern = self._SEARCH_PATTERNS.get(query)
             if not pattern:
-                return 0 if as_int else "Unknown"
+                return 0 if as_int else "n/a"
 
-            if match := pattern.search(self._report_data):
+            match = pattern.search(self._report_data)
+            if match:
                 raw_text = match.group(1)
                 cleaned_text = self._normalize_text(raw_text)
 
@@ -1472,13 +1154,12 @@ if _platform == "Windows":
                     return self._extract_numeric_value(cleaned_text)
                 return cleaned_text
 
-            return 0 if as_int else "Unknown"
+            return 0 if as_int else "n/a"
 
         @staticmethod
         @lru_cache(maxsize=128)
         def _normalize_text(html_text: str) -> str:
             """Clean HTML text by removing tags and normalizing whitespace."""
-
             # Remove HTML tags
             text = re.sub(r'<[^>]*>', '', html_text)
             # Decode HTML entities
@@ -1489,10 +1170,9 @@ if _platform == "Windows":
         @staticmethod
         def _extract_numeric_value(text: str) -> int:
             """Extract numeric value from text, handling various formats."""
-
             # Remove non-digit characters except commas and periods
             digits_only = re.sub(r'[^\d,.]', '', text)
-            # Remove commas (a thousand separators)
+            # Remove commas (thousand separators)
             digits_only = digits_only.replace(',', '')
             # Handle decimal points by taking integer part
             if '.' in digits_only:
@@ -1504,23 +1184,23 @@ if _platform == "Windows":
                 return 0
 
         # Public interface methods
-        def battery_manufacturer(self) -> str:
+        def get_battery_manufacturer(self) -> str:
             """Get the battery manufacturer."""
             return self._parse_html("manufacturer")
 
-        def battery_chemistry(self) -> str:
+        def get_battery_chemistry(self) -> str:
             """Get the battery chemistry type."""
             return self._parse_html("chemistry")
 
-        def battery_design_capacity(self) -> int:
+        def get_battery_design_capacity(self) -> int:
             """Get battery design capacity in mWh."""
             return self._parse_html("design_capacity", as_int=True)
 
-        def battery_full_capacity(self) -> int:
+        def get_battery_full_capacity(self) -> int:
             """Get battery full charge capacity in mWh."""
             return self._parse_html("full_capacity", as_int=True)
 
-        def battery_cycle_count(self) -> int:
+        def get_battery_cycle_count(self) -> int:
             """Get battery cycle count."""
             return self._parse_html("cycle_count", as_int=True)
 
@@ -1528,21 +1208,8 @@ if _platform == "Windows":
             """Check if battery report data is available."""
             return self._report_data is not None
 
-        def get_battery_health_percentage(self) -> float:
-            """Calculate battery health as percentage of design vs. full capacity."""
-            design = self.battery_design_capacity()
-            full = self.battery_full_capacity()
 
-            if design > 0 and full > 0:
-                return round((full / design) * 100, 2)
-            return 0.0
-
-        def battery_technology(self) -> str:
-            """ This method gets the battery chemistry string"""
-            return self._parse_html("chemistry")
-
-
-elif _platform == "Linux":
+elif _PLATFORM == "Linux":
 
     class Battery(_BatteryPy):
         """
@@ -1684,13 +1351,13 @@ elif _platform == "Linux":
             except ValueError:
                 return None
 
-        def manufacturer(self) -> Optional[str]:
+        def battery_manufacturer(self) -> Optional[str]:
             """Get the battery manufacturer name"""
             return self._read_battery_property("manufacturer")
 
         def battery_technology(self) -> str:
             """Get the battery technology (Li-ion, Li-poly, etc.)"""
-            technology: str = "Lithium-Ion" if self._read_battery_property("technology") != "Unkown" else \
+            technology: str = "Lithium-Ion" if self._read_battery_property("technology") != "n/a" else \
                     self._read_battery_property("technology")
 
             if technology is not None:
@@ -1823,6 +1490,7 @@ elif _platform == "Linux":
                 result = capacity // 1000  # Convert µAh to mAh
                 if self._dev_mode:
                     print(f"[DEV] remaining_capacity: Using charge_now fallback ({capacity} µAh -> {result} mAh)")
+
                 return result
 
             if self._dev_mode:
@@ -1892,7 +1560,7 @@ elif _platform == "Linux":
 
             # Consider fast charging if rate > 15W (arbitrary threshold)
             # You may want to adjust this based on your device specifications
-            return charge_rate > _fast_charge_rate  # 15W in mW
+            return charge_rate >= self._FAST_CHARGE_THRESHOLD  # 15W in mW
 
         def battery_voltage(self) -> Optional[float]:
             """

@@ -1,10 +1,12 @@
+#!/usr/bin/env python3
+
 """
 This code or file is part of 'BatteryPy' project
 copyright (c) 2023-2025 , Aymen Brahim Djelloul, All rights reserved.
 use of this source code is governed by MIT License that can be found on the project folder.
 
-@author : Aymen Brahim Djelloul
-version : 0.2
+@_AUTHOR : Aymen Brahim Djelloul
+VERSION : 0.2
 date : 06.04.2025
 license : MIT License
 
@@ -43,6 +45,7 @@ def _run_as_admin() -> Optional[Any]:
     """
     try:
         is_admin = ctypes.windll.shell32.IsUserAnAdmin()
+
     except Exception:
         is_admin = False
 
@@ -72,7 +75,7 @@ class BatteryPyInterface:
         self.root = root
 
         # Set window title and size
-        self.root.title(getattr(batterypy, 'caption', 'BatteryPy'))
+        self.root.title(getattr(batterypy, '_CAPTION', 'BatteryPy'))
         self.root.resizable(False, False)
 
         window_width: int = 430
@@ -94,7 +97,7 @@ class BatteryPyInterface:
 
         # Check for missing dependencies
         if miss_dependencies:
-            print("work")
+
             messagebox.showerror(
                 "Missing Libraries",
                 "One or more required components are missing.\n\n"
@@ -111,10 +114,9 @@ class BatteryPyInterface:
 
             caption_font = font.nametofont("TkCaptionFont")
             caption_font.configure(size=14, weight="bold", family="Segoe UI")
+
         except Exception as e:
             print(f"Font configuration warning: {e}")
-
-
 
         # Check for updates
         # Create Updater object
@@ -123,7 +125,7 @@ class BatteryPyInterface:
         if updater.is_update():
             update_data = updater.get_update_info()
 
-            version: str = update_data.get("version", "N/A")
+            version: str = update_data.get("VERSION", "N/A")
             size: str = update_data.get("download_size_mb", "Unknown")
             description: str = update_data.get("description", "No description provided.")
             download_url: str = update_data.get("download_url")
@@ -132,8 +134,8 @@ class BatteryPyInterface:
             root = tk.Tk()
             root.withdraw()  # Hide the root window
 
-            message = (
-                f"A new version of BatteryPy is available!\n\n"
+            message: tuple[str] = (
+                f"A new VERSION of BatteryPy is available!\n\n"
                 f"Version: {version}\n"
                 f"Size: {size}\n\n"
                 f"Description:\n{description}\n\n"
@@ -212,16 +214,6 @@ class BatteryPyInterface:
         # Create main frame
         self.frame = ttk.Frame(self.root, padding=10)
         self.frame.pack(fill=tk.BOTH, expand=True)
-
-        # Check for battery presence and create title
-        # if self.battery:
-        #     # Create title label
-        #     self.title_label = ttk.Label(
-        #         self.frame,
-        #         text="BatteryPy - Check Your Battery",
-        #         font=("Segoe UI", 10, "bold")
-        #     )
-        #     self.title_label.pack(pady=(0, 10))
 
         # Create info frame
         self.info_frame = ttk.LabelFrame(self.frame, text="Information", padding=15)
@@ -381,7 +373,6 @@ class BatteryPyInterface:
                 "fast_charge": "Yes" if self.battery.is_fast_charge() else "No",
                 "battery_percent": f"{self.battery.battery_percent()}%",
                 "battery_voltage": f"{self.battery.battery_voltage()} V",
-                # "battery_temperature": f"{self.battery.battery_temperature()} C",
             }
 
             # Update display immediately
@@ -508,7 +499,7 @@ class BatteryPyInterface:
                 "system_info": {
                     "os": f"{platform.system()} {platform.release()}",
                     "machine": platform.machine(),
-                    "app_version": getattr(batterypy, 'version', '1.0.0'),
+                    "app_version": getattr(batterypy, 'VERSION', '1.0.0'),
                     "generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
             }
@@ -637,7 +628,7 @@ class BatteryPyInterface:
         title_label.pack(pady=(0, 8))
 
         # Version with fallback
-        version = getattr(batterypy, 'version', '1.0.0')
+        version = getattr(batterypy, 'VERSION', '1.0.0')
         version_label = ttk.Label(
             parent,
             text=f"Version {version}",
@@ -664,7 +655,7 @@ class BatteryPyInterface:
 
     @staticmethod
     def _create_author_section(parent) -> None:
-        """Create the author information section."""
+        """Create the _AUTHOR information section."""
         author_frame = ttk.Frame(parent)
         author_frame.pack(pady=(0, 5))
 
@@ -676,7 +667,7 @@ class BatteryPyInterface:
         ).pack()
 
         # Author name with fallback
-        author_name = getattr(batterypy, 'author', 'Aymen Brahim Djelloul')
+        author_name = getattr(batterypy, '_AUTHOR', 'Aymen Brahim Djelloul')
         ttk.Label(
             author_frame,
             text=author_name,
@@ -685,17 +676,17 @@ class BatteryPyInterface:
 
     @staticmethod
     def _create_links_section(parent, about_window) -> None:
-        """Create the links section with website and GitHub buttons."""
+        """Create the links section with _WEBSITE and GitHub buttons."""
         links_frame = ttk.Frame(parent)
         links_frame.pack(pady=(0, 15))
 
         # Website button
         def open_website():
             try:
-                url = getattr(batterypy, 'website', 'https://github.com/aymenbrahimdjelloul/BatteryPy')
+                url = getattr(batterypy, '_WEBSITE', 'https://github.com/aymenbrahimdjelloul/BatteryPy')
                 webbrowser.open(url)
             except Exception as e:
-                print(f"Error opening website: {e}")
+                print(f"Error opening _WEBSITE: {e}")
 
         website_btn = ttk.Button(
             links_frame,
@@ -846,7 +837,7 @@ class BatteryPyInterface:
 class Updater:
     """Updater class contains the logic to check for new updates from GitHub releases"""
 
-    repo_owner: str = batterypy.author.replace(" ", "").lower()
+    repo_owner: str = batterypy._AUTHOR.replace(" ", "").lower()
     repo_name: str = "BatteryPy"
 
     # GitHub API URL for the latest release
@@ -886,10 +877,10 @@ class Updater:
             if not latest_info:
                 return None
 
-            latest_version = latest_info.get('version', '').lstrip('v')
-            current_version = batterypy.version
+            latest_version = latest_info.get('VERSION', '').lstrip('v')
+            current_version = batterypy.VERSION
 
-            # Simple version comparison (you might want to use semantic versioning)
+            # Simple VERSION comparison (you might want to use semantic versioning)
             return self._compare_versions(current_version, latest_version)
 
         except Exception as e:
@@ -903,7 +894,7 @@ class Updater:
         Get detailed information about the latest release
 
         Returns:
-            Dictionary with the version, description, download_size_mb, download_url
+            Dictionary with the VERSION, description, download_size_mb, download_url
         """
         try:
             return self._get_latest_release_info()
@@ -989,7 +980,7 @@ class Updater:
                 return None
 
             parsed_info: dict[str, str] = {
-                'version': version,
+                'VERSION': version,
                 'description': description,
                 'published_at': published_at,
                 'html_url': html_url,
@@ -1025,15 +1016,15 @@ class Updater:
     @staticmethod
     def _compare_versions(current: str, latest: str) -> bool:
         """
-        Simple version comparison
-        For production, consider using packaging.version for semantic versioning
+        Simple VERSION comparison
+        For production, consider using packaging.VERSION for semantic versioning
         """
         try:
             # Remove 'v' prefix if present and split by dots
             current_parts = [int(x) for x in current.replace('v', '').split('.')]
             latest_parts = [int(x) for x in latest.replace('v', '').split('.')]
 
-            # Pad shorter version with zeros
+            # Pad shorter VERSION with zeros
             max_len = max(len(current_parts), len(latest_parts))
             current_parts.extend([0] * (max_len - len(current_parts)))
             latest_parts.extend([0] * (max_len - len(latest_parts)))

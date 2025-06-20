@@ -9,6 +9,11 @@ use of this source code is governed by MIT License that can be found on the proj
     // This code uses BatteryPy to collect battery data and displays it with rich color formatting.
     // It features interactive commands, beautifully aligned output, and options to save reports.
 
+@_AUTHOR : Aymen Brahim Djelloul
+VERSION : 1.5
+date : 19.06.2025
+License : MIT License
+
 """
 
 # IMPORTS
@@ -25,28 +30,27 @@ from typing import Any
 # Handle missing imports
 try:
     import batterypy
-    from batterypy import BatteryPyException
 
+    from batterypy import BatteryPyException
     # use colorama for the best coloring
     from colorama import Fore, Style, init
 
     # Initialize colorama
     init(autoreset=True)
 
-
     class Colors:
         """
         A utility class that defines CLI coloring using 'colorama'
         """
 
-        UNDERLINE = Style.BRIGHT
-        YELLOW = Fore.YELLOW
-        GREEN = Fore.GREEN
-        RED = Fore.RED
-        CYAN = Fore.CYAN
-        BLUE = Fore.BLUE
-        BOLD = Style.NORMAL
-        END = Style.RESET_ALL
+        UNDERLINE: int = Style.BRIGHT
+        YELLOW: int = Fore.YELLOW
+        GREEN: int = Fore.GREEN
+        RED: int = Fore.RED
+        CYAN: int = Fore.CYAN
+        BLUE: int = Fore.BLUE
+        BOLD: int = Style.NORMAL
+        END: int = Style.RESET_ALL
 
 except ImportError:
 
@@ -59,14 +63,14 @@ except ImportError:
         A utility class that defines ANSI escape sequences for styling terminal text output.
         """
 
-        BLUE = "\033[94m"
-        CYAN = "\033[96m"
-        GREEN = "\033[92m"
-        YELLOW = "\033[93m"
-        RED = "\033[91m"
-        BOLD = "\033[1m"
-        UNDERLINE = "\033[4m"
-        END = "\033[0m"
+        BLUE: str = "\033[94m"
+        CYAN: str = "\033[96m"
+        GREEN: str = "\033[92m"
+        YELLOW: str = "\033[93m"
+        RED: str = "\033[91m"
+        BOLD: str = "\033[1m"
+        UNDERLINE: str = "\033[4m"
+        END: str = "\033[0m"
 
 
 except BatteryPyException:
@@ -86,14 +90,14 @@ class BatteryCLI:
         self.battery = batterypy.Battery()
 
         # Get all battery info
-        self.battery_info = self.battery.get_result()
+        self.battery_info: dict = self.battery.get_result()
         # Get arguments
         self.args = self._parse_arguments()
 
-        self.running = True
+        self.running: bool = True
 
         # Initialize terminal width
-        self.terminal_width = self._get_terminal_width()
+        self.terminal_width: int = self._get_terminal_width()
 
     @staticmethod
     def _get_terminal_width() -> int:
@@ -110,7 +114,7 @@ class BatteryCLI:
         """Parse command line arguments"""
 
         parser = argparse.ArgumentParser(
-            description=f"{batterypy.caption} - Battery Information Monitoring Tool",
+            description=f"{batterypy._CAPTION} - Battery Information Monitoring Tool",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         )
 
@@ -141,9 +145,9 @@ class BatteryCLI:
         )
 
         parser.add_argument(
-            "-v", "--version",
+            "-v", "--VERSION",
             action="store_true",
-            help="Show application version"
+            help="Show application VERSION"
         )
 
         parser.add_argument(
@@ -157,12 +161,12 @@ class BatteryCLI:
 
     def run(self) -> None:
         """Run the CLI tool based on provided arguments"""
-        # Handle version flag first
-        if self.args.version:
+        # Handle VERSION flag first
+        if self.args.VERSION:
             self._display_version()
             return
 
-        # Always run in interactive mode unless explicitly displaying the version only
+        # Always run in interactive mode unless explicitly displaying the VERSION only
         self.args.interactive = True
 
         # Display initial battery info
@@ -194,8 +198,8 @@ class BatteryCLI:
         """ This method will set title for terminal window"""
 
         try:
-            os.system(f"title {batterypy.caption}" if batterypy._platform == "Windows" else
-                      f'echo -ne "\033]0;{batterypy.caption}\007"')
+            os.system(f"title {batterypy._CAPTION}" if batterypy._PLATFORM == "win32" else
+                      f'echo -ne "\033]0;{batterypy._CAPTION}\007"')
             return None
 
         except OSError:
@@ -238,21 +242,21 @@ class BatteryCLI:
         return f"{' ' * padding}{text}"
 
     def _display_header(self) -> None:
-        """Display application header with version and author info."""
+        """Display application header with VERSION and _AUTHOR info."""
 
         print(f""
               f"\n{Colors.BOLD}{Colors.CYAN}"
-              f"{self._center_text(f'{batterypy.caption} - Developed by {batterypy.author}')}\n"
-              f"{self._center_text(f'visit : {batterypy.website}')}\n")
+              f"{self._center_text(f'{batterypy._CAPTION} - Developed by {batterypy._AUTHOR}')}\n"
+              f"{self._center_text(f'visit : {batterypy._WEBSITE}')}\n")
 
         print(f"{Colors.BLUE}{Colors.BOLD}{'─' * self.terminal_width}{Colors.END}\n")
 
     @staticmethod
     def _display_version() -> None:
-        """Display detailed version information"""
-        print(f"\n {Colors.BOLD}Application    : {Colors.END}    {Colors.CYAN}{batterypy.caption}{Colors.END}")
-        print(f" {Colors.BOLD}Developed by   : {Colors.END}    {batterypy.author}")
-        print(f" {Colors.BOLD}Website        : {Colors.END}    {batterypy.website}")
+        """Display detailed VERSION information"""
+        print(f"\n {Colors.BOLD}Application    : {Colors.END}    {Colors.CYAN}{batterypy._CAPTION}{Colors.END}")
+        print(f" {Colors.BOLD}Developed by   : {Colors.END}    {batterypy._AUTHOR}")
+        print(f" {Colors.BOLD}Website        : {Colors.END}    {batterypy._WEBSITE}")
 
     @staticmethod
     def _format_info_line(label: str, value: Any, color_code: str = "") -> str:
@@ -321,7 +325,7 @@ class BatteryCLI:
             ("clear (c)", "Clear the screen"),
             ("quit ('q' or 'exit' or 'bye')", "Exit the application"),
             ("help ('?' or 'help' or 'h')", "Show this help"),
-            ("version ('version' or 'v')", "Show BatteryPy current version")
+            ("VERSION ('VERSION' or 'v')", "Show BatteryPy current VERSION")
         ]
 
         print(f"\n{Colors.YELLOW}{Colors.BOLD}Available Commands:{Colors.END}")
@@ -358,7 +362,7 @@ class BatteryCLI:
                 # Handle single-key commands first
                 if user_input in ("q", "quit", "exit", "bye"):
                     self.running = False
-                    print(f"{Colors.YELLOW}Exiting {batterypy.caption}...{Colors.END}")
+                    print(f"{Colors.YELLOW}Exiting {batterypy._CAPTION}...{Colors.END}")
 
                     # wait
                     sleep(2)
@@ -377,7 +381,7 @@ class BatteryCLI:
                 elif user_input == 'c':
                     self._refresh_battery_info()
 
-                elif user_input in ('v', 'version'):
+                elif user_input in ('v', 'VERSION'):
                     self._display_version()
                     # Wait for user input
                     self._wait_user_input()
@@ -425,7 +429,7 @@ class BatteryCLI:
 
         # Header
         report.append("=" * width)
-        report.append(f"{batterypy.caption} - Battery Report".center(width))
+        report.append(f"{batterypy._CAPTION} - Battery Report".center(width))
         report.append("-" * width)
         report.append(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         report.append("=" * width)
@@ -457,8 +461,8 @@ class BatteryCLI:
         # Footer
         report.append("")
         report.append("=" * width)
-        report.append(f"Report by {batterypy.caption}".center(width))
-        report.append(f"{batterypy.website}".center(width))
+        report.append(f"Report by {batterypy._CAPTION}".center(width))
+        report.append(f"{batterypy._WEBSITE}".center(width))
 
         return "\n".join(report)
 
@@ -488,8 +492,8 @@ class BatteryCLI:
             elif fmt == "json":
                 filepath = os.path.join(self.args.output_dir, f"battery_report_{timestamp}.json")
                 report_data: dict = {
-                    "generated_by": f"{batterypy.caption}",
-                    "batterypy_version": batterypy.version,
+                    "generated_by": f"{batterypy._CAPTION}",
+                    "batterypy_version": batterypy.VERSION,
                     "timestamp": datetime.datetime.now().isoformat(),
                     "battery_info": self.battery_info
                 }
@@ -519,7 +523,7 @@ def __main__() -> int:
 
     except BatteryPyException:
 
-        print(f"\n\n  {Colors.YELLOW}{batterypy.caption} ⚠️  No battery detected. Battery monitoring "
+        print(f"\n\n  {Colors.YELLOW}{batterypy._CAPTION} ⚠️  No battery detected. Battery monitoring "
               f"is unavailable on this device.{Colors.END}\n")
 
         input("  Press Enter to exit.")
