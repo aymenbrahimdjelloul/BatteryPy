@@ -121,7 +121,7 @@ class _BatteryPy(ABC):
                 # Check battery flags with bitwise operation (faster)
                 return status.BatteryFlag & 0x0F != 0
 
-            elif _PLATFORM == "Linux":
+            elif _PLATFORM == "linux":
                 # Essential battery files to check
                 essential_files: set[str] = {'capacity', 'energy_now', 'charge_now'}
                 power_supply_path: str = "/sys/class/power_supply/"

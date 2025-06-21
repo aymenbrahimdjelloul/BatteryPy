@@ -254,9 +254,9 @@ class BatteryCLI:
     @staticmethod
     def _display_version() -> None:
         """Display detailed VERSION information"""
-        print(f"\n {Colors.BOLD}Application    : {Colors.END}    {Colors.CYAN}{batterypy._CAPTION}{Colors.END}")
-        print(f" {Colors.BOLD}Developed by   : {Colors.END}    {batterypy._AUTHOR}")
-        print(f" {Colors.BOLD}Website        : {Colors.END}    {batterypy._WEBSITE}")
+        print(f"\n {Colors.BOLD}Version      : {Colors.END}    {Colors.CYAN}{batterypy.VERSION}{Colors.END}")
+        print(f" {Colors.BOLD}Developed by : {Colors.END}    {batterypy._AUTHOR}")
+        print(f" {Colors.BOLD}Website      : {Colors.END}    {batterypy._WEBSITE}")
 
     @staticmethod
     def _format_info_line(label: str, value: Any, color_code: str = "") -> str:

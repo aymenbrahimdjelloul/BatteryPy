@@ -22,16 +22,17 @@ import webbrowser
 import platform
 import ctypes
 import tkinter as tk
-from pathlib import Path
 from tkinter import ttk, messagebox, filedialog, PhotoImage, font
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-
 from batterypy import BatteryPyException
+
 
 try:
     import batterypy
     import requests
+
     miss_dependencies: bool = False
 
 except ImportError:
