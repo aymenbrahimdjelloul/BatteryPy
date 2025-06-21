@@ -1209,7 +1209,7 @@ if _PLATFORM == "win32":
             return self._report_data is not None
 
 
-elif _PLATFORM == "Linux":
+elif _PLATFORM == "linux":
 
     class Battery(_BatteryPy):
         """
