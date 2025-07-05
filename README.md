@@ -12,12 +12,12 @@ BatteryPy is a lightweight, pure-Python library designed for Windows, allowing y
   <table>
     <tr>
       <td align="center">
-        <img src="https://github.com/aymenbrahimdjelloul/BatteryPy/blob/main/images/screenshot_1.png" alt="Main Interface" width="400px"/>
+        <img src="https://github.com/aymenbrahimdjelloul/BatteryPy/blob/main/images/screenshot_1.png" alt="Main Interface" width="350px"/>
         <br>
         <em>BatteryPy App</em>
       </td>
       <td align="center">
-        <img src="https://github.com/aymenbrahimdjelloul/BatteryPy/blob/main/images/screenshot_2.png" alt="Scan in Progress" width="400px"/>
+        <img src="https://github.com/aymenbrahimdjelloul/BatteryPy/blob/main/images/screenshot_2.png" alt="Scan in Progress" width="350px"/>
         <br>
         <em>BatteryPy About</em>
       </td>
