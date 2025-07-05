@@ -1,5 +1,9 @@
 <!-- GitHub README.md -->
 
+<a href="https://github.com/aymenbrahimdjelloul/BatteryPy/releases/latest">
+    <img src="https://img.shields.io/github/v/release/aymenbrahimdjelloul/BatteryPy?color=green&label=Download&style=for-the-badge" alt="Download Latest Release">
+</a>
+
 # **BatteryPy**
 BatteryPy is a lightweight, pure-Python library designed for Windows, allowing you to easily and quickly retrieve detailed battery information and status. Whether you're monitoring battery health, charge level, or power source, BatteryPy provides a fast and efficient way to access crucial battery data without relying on external dependencies.
 
